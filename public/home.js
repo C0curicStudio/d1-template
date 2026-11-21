@@ -10,7 +10,7 @@ const FR = ["Petit à petit, l'oiseau fait son nid.", "Qui veut aller loin ména
 $("#frq").textContent = greetFr() + ", Max. — " + FR[Math.floor(now / 864e5) % FR.length];
 $("#date").textContent = now.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Shanghai" }) + " · " + LINES[Math.floor(now / 864e5) % LINES.length];
 
-// 坚持打卡 + 考试倒计时
+// 坚持打卡
 // 数字从 0 滚到目标值（只在第一次显示时；精简模式/减少动态时直接显示）
 let counted = false;
 const calm = () => document.documentElement.classList.contains("lite") || matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -19,23 +19,10 @@ function countUp(b, n) {
 	const t0 = performance.now(), f = (t) => { const k = Math.min(1, (t - t0) / 700); b.textContent = Math.round(n * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(f); };
 	b.textContent = 0; requestAnimationFrame(f);
 }
-// 手账风：考试天数外面手画的一个圈（两笔没完全闭合，像随手圈出来的）
-const RING = '<svg class="ring" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true"><path d="M58 6C28 2 5 14 6 32c1 17 30 25 55 22 22-3 36-13 33-27C91 12 70 4 44 7"/></svg>';
 function renderHero(h) {
 	const chip = (n, label) => { const b = el("b"); countUp(b, n); return el("div", { className: "stat" }, b, el("span", { textContent: label })); };
 	$("#stats").replaceChildren(chip(h.streak, h.done_today ? "连续练习天数" : "连续天数 · 今天还没练"), chip(h.today_count, "今日待练"), chip(h.right7, "近 7 天做对"));
 	counted = true;
-	const box = $("#exams");
-	if (!h.exams.length) return box.replaceChildren(askClaude(CLAUDE_ASK.exams, "{calendar}让 Claude 写上临近的考试，首页倒计时"));
-	box.replaceChildren(...h.exams.slice(0, 3).map((e, i) => {
-		const d = Math.round((Date.parse(e.date) - Date.parse(h.today)) / 864e5);
-		// 离考试 7 天内：数字旁边画两个手绘感叹号（留着不消失，也不颤）
-		if (!i && d > 0 && d <= 7) setTimeout(() => { const n = box.querySelector(".exam.first .num"); if (n && !n.querySelector(".doodle")) { doodle("excl", 0, 0, { in: n, stay: true, size: 34, rot: 12 }); doodle("excl", 0, 0, { in: n, stay: true, size: 26, rot: 24, delay: .12 }); } }, 50);
-		return el("div", { className: "exam" + (i ? "" : " first") },
-			el("div", { className: "en", textContent: "距离 " + e.name }),
-			el("div", { className: "ed" }, watchHw(el("span", { className: "num hw", innerHTML: RING }, el("b", { textContent: d || "今天" }))), d ? "天" : ""),
-			el("div", { className: "mute", textContent: e.date.slice(5).replace("-", " 月 ") + " 日" + (d <= 7 && d ? " · 冲刺！" : "") }, d <= 7 && d ? fr(" Allez, on y va !") : d ? "" : fr(" Bonne chance !")));
-	}));
 }
 
 let uploading = false, lastHome = "", waitBrief = 0;
@@ -74,7 +61,7 @@ async function loadHome() {
 	}
 }
 
-// Max：今天先做什么 + 薄弱点 + 考前冲刺（服务器按天缓存，做题有变化才重算，不怎么花额度）
+// Max：今天先做什么 + 薄弱点（服务器按天缓存，做题有变化才重算，不怎么花额度）
 let lastBrief = "";
 // 手动「重新看看」才让 Max 重想（服务器 10 分钟内最多一次）；平时的建议跟着首页数据一起来，一天只想一次
 async function rethink() {
@@ -86,8 +73,8 @@ function showBrief(b) {
 	if (!b || JSON.stringify(b) === lastBrief) return;
 	lastBrief = JSON.stringify(b);
 	const go = (ids, label) => (ids.length ? el("a", { className: "btn primary small", href: "/quiz?ids=" + ids.join(","), textContent: label }) : "");
-	// 精简：一句建议 + 最多 3 个薄弱点 + 两个主按钮；冲刺、薄弱点的长段说明不再显示
-	const say = b.soon.length && b.sprint ? `${b.soon[0].name} 冲刺：${b.sprint}` : b.say || "";
+	// 精简：一句建议 + 最多 3 个薄弱点 + 两个主按钮；薄弱点的长段说明不再显示
+	const say = b.say || "";
 	box.replaceChildren(
 		el("h2", {}, icon("max"), maxWord(), el("span", { className: "maxtag", textContent: b.budget >= 85 ? "额度快用完" : "" })),
 		el("p", { textContent: say.length > 48 ? say.slice(0, 47) + "…" : say }),

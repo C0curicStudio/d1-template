@@ -18,7 +18,7 @@ const MAX_IMAGES = 6;
 const INSTRUCTIONS = `MAX NOTE（错题练习，初三自用）。省用量：一次 save 写完，回复简短；和学生说题用题号（如 数学1）。
 分工：网站助手 Max 批选择/填空/文字题和有把握的作图题，整理错题、错因、题型标签和章节考点分类；你批 Max 拿不准的作图题和照片/手写题，处理照片收件箱，做错题文件夹后续（自己来取，网站不推送）。
 批改：get_inbox → save({grades})；有「Max初评」且同意就 save({ok:[作答id]})，要看图 get_data({kind:"img",id})。
-出题：get_data({kind:"tpl"})（每对话一次）；复习旧题 save({review:[id]})；考试 save({exams:[{name,date}]})。
+出题：get_data({kind:"tpl"})（每对话一次）；复习旧题 save({review:[id]})。
 错题文件夹：每天定时任务、或每次主动交互（get_inbox 提示有新题时），自己调用 get_data({kind:"folder"}) 取 Max 整理好的（题干、错答、错因、薄弱考点），不用问学生，照附言做。文件夹每天北京时间 2:30 清空，要在这之前取。作答标记：[计算]步骤 [作图]画板描述(单位=格,方程/交点已算) [电路]网表+通电结果。`;
 
 // 题目（短字段名省输出）
@@ -156,14 +156,13 @@ export function buildServer(env: Env, ctx?: ExecutionContext) {
 					.optional(),
 				organize: z.array(z.object({ id: z.number().int(), subject: z.string().optional(), category: z.string().optional(), topic: z.string().optional(), tag: z.string().optional(), fig: z.any().optional().describe("补/改题图") })).optional(),
 				review: z.array(z.number().int()).optional().describe("旧题 id：放回今日练习复习"),
-				exams: z.array(z.object({ name: z.string(), date: z.string().describe("YYYY-MM-DD") })).optional().describe("临近考试（整表替换），首页显示倒计时"),
 				summary: z.string().optional(),
 				plan: z.array(z.object({ q: z.array(z.string()).max(60).describe('题号，如 物理3；"last"=刚推的这一批'), d: z.string().describe('哪天做 YYYY-MM-DD；today 或更早=今天做') })).max(20).optional().describe('排期：网站只把到期的题放进今日练习，其余在题库里等着'),
 				retract: z.array(z.string()).max(30).optional().describe('撤回已推送的题：题号（如 数学3）或 "last"（撤回上一次推送的整批）。有待批改作答的题不撤'),
 				notes: z.array(z.object({ s: z.array(z.string()).describe("科目（可带别名，如 道法、道德与法治）"), t: z.string().describe("笔记标题"), u: z.string().describe("Notion 链接"), k: z.array(z.string()).optional().describe("考点关键词；省略 = 这一科的兜底页") })).max(80).optional().describe("考点→Notion 笔记对照表（整表替换），答错后网站按它给「Notion 笔记」按钮"),
 			},
 		},
-		async ({ def = {}, questions = [], wrong = [], done_uploads = [], grades = [], ok: agree = [], organize = [], review = [], exams, summary, notes, retract = [], plan = [] }) => {
+		async ({ def = {}, questions = [], wrong = [], done_uploads = [], grades = [], ok: agree = [], organize = [], review = [], summary, notes, retract = [], plan = [] }) => {
 			const out: string[] = [];
 			const err: string[] = [];
 			if (agree.length) { // 同意 Max 初评：直接照初评打分
@@ -266,11 +265,6 @@ export function buildServer(env: Env, ctx?: ExecutionContext) {
 					db.prepare("INSERT OR REPLACE INTO review_queue (question_id, next_date, stage) SELECT id, ?, 0 FROM questions WHERE id = ?").bind(today(), id),
 				]));
 				out.push(`复习 ${review.join(",")}`);
-			}
-			if (exams) {
-				const ok = exams.filter((e) => /^\d{4}-\d{2}-\d{2}$/.test(e.date));
-				await db.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('exams', ?)").bind(JSON.stringify(ok)).run();
-				out.push(`考试 ${ok.length} 场`);
 			}
 			if (notes) {
 				const ok = notes.filter((n) => /^https:\/\/([\w-]+\.)?notion\.(so|com|site)\//.test(n.u));
