@@ -1,6 +1,7 @@
 // Max 助手 = 两个模型：
 //   总管：Cloudflare Workers AI（免费额度每天 1 万神经元，UTC 0 点重置）→ 默认干所有活
-//   备用：DeepSeek API（Worker 运行时密钥 DEEPSEEK_API_KEY）→ 只在总管额度用完、出错、超时、答得不靠谱时顶上（难题也先让总管用强模型答）
+//   「我的模型」：网页设置里填的任何 OpenAI 兼容接口（DeepSeek/通义/智谱/Kimi…，密钥存 D1，见 aicfg.ts）。填了就默认优先用它（设置里可关），Cloudflare 兜底；没填就只在总管额度用完、出错、超时时才轮到
+// （代码里的内部名仍叫 "ds"）
 // 同一件事只由一个模型答（按顺序试，成功就停），不会两边重复花钱；批改有抢占标记，不会重复批。
 // 省用量：关掉深度思考、限制输出长度、只发必要字段、能缓存的都缓存；作图/照片/手写题不碰，照旧交给 Claude。
 import { today, updateQueue } from "./review";
@@ -10,12 +11,13 @@ import { alive, live, ready, wrongSql } from "./live";
 import { webSearch } from "./search";
 import { figText } from "./fig";
 import { enqueueNow } from "./jobs";
+import { aiCfg, chatUrl, isDeepSeek } from "./aicfg";
 import { info as kimiInfo, note as kimiNote, patch as kimiPatch } from "./kimi";
 
 const CF = ["@cf/zai-org/glm-4.7-flash", "@cf/qwen/qwen3.8-27b"]; // 默认先用便宜的 glm（输出价只有 qwen 的 1/8）；批改（strong）先用 qwen
 const CHAT_DS = 20; // 聊天一句话超过这么多字算「难」：总管换强模型（qwen）先答，答不了再交给 DeepSeek
 const DAILY = 9800, SOFT = 8500; // Cloudflare 估算神经元：超过 SOFT 只留批改，超过 DAILY 不再用
-const DS_DAILY = 400_000; // DeepSeek 每天最多用的 token（防止意外花钱）
+const DS_DAILY = 800_000; // 「我的模型」每天最多用的 token（防止意外花钱）
 const PASS = 80;
 const REASONS = ["概念不清", "表述不规范", "审题失误", "计算错误", "不会做"]; // 只是作答表的旧约束；Max 的错因写在题目上，不受限
 const DRAW = new Set(["作图", "函数", "电路", "光路", "受力", "证明"]); // 作图题：Max 不批，交给 Claude
@@ -55,7 +57,7 @@ const within = <T>(f: (signal: AbortSignal) => Promise<T>, ms: number): Promise<
 const waitFor = (max: number, k = 1) => Math.min(90000, Math.max(20000, 12000 + max * 35)) * k;
 
 async function providers(env: Env, route: Route, must = false, only?: string, deep = false, strong = false): Promise<Prov[]> {
-	const db = env.DB, key = (env as any).DEEPSEEK_API_KEY as string | undefined;
+	const db = env.DB, cfg = await aiCfg(env), key = cfg?.key;
 	const kp = await kimiPatch(db); // Kimi 自检的补丁（只有白名单里的几个数字/开关）
 	const [cfUsed, dsUsed] = await Promise.all([used(db), key ? meter(db, "ds:") : Promise.resolve(Infinity)]);
 	const cf: Prov[] = !deep && cfUsed < (must ? DAILY : SOFT) ? (strong || route === "hard" ? [...CF].reverse() : CF).map((model) => ({
@@ -79,26 +81,26 @@ async function providers(env: Env, route: Route, must = false, only?: string, de
 		name: "ds", model: "ds", firstMs: deep ? 120000 : kp.dsMs ?? 15000,
 		call: async (messages, max, stream) => {
 			const ac = new AbortController(), t = setTimeout(() => ac.abort(), stream ? (deep ? 40000 : kp.dsMs ?? 20000) : waitFor(max, kp.waitScale));
-			const r = await fetch("https://api.deepseek.com/chat/completions", {
+			const r = await fetch(chatUrl(cfg!), {
 				method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + key }, signal: ac.signal,
-				body: JSON.stringify({ model: deep ? (env as any).DEEPSEEK_REASONER_MODEL || "deepseek-reasoner" : (env as any).DEEPSEEK_MODEL || "deepseek-chat", messages, max_tokens: max, ...(deep ? {} : { temperature: 0.3 }), stream, ...(stream ? { stream_options: { include_usage: true } } : {}) }),
+				body: JSON.stringify({ model: deep ? cfg!.reasoner || cfg!.model : cfg!.model, messages, max_tokens: max, ...(deep ? {} : { temperature: 0.3 }), stream, ...(stream ? { stream_options: { include_usage: true } } : {}) }),
 			});
-			if (!r.ok) { clearTimeout(t); throw new Error(`DeepSeek ${r.status} ${(await r.text()).slice(0, 80)}`); }
+			if (!r.ok) { clearTimeout(t); throw new Error(`${cfg!.name} ${r.status} ${(await r.text()).slice(0, 80)}`); }
 			if (stream) { clearTimeout(t); return r.body; } // 开始输出就不再计时
 			try { return await r.json(); } finally { clearTimeout(t); }
 		},
 		bill: (u, i, o) => Promise.all([add(db, "ds:", (u?.prompt_tokens ?? i) + (u?.completion_tokens ?? o)), add(db, "dsn:", 1)]),
 	}] : [];
-	const all = (route === "ds" ? [...ds, ...cf] : [...cf, ...ds]).filter((p) => !only || p.name === only);
+	const all = (route === "ds" || cfg?.prefer ? [...ds, ...cf] : [...cf, ...ds]).filter((p) => !only || p.name === only); // 填了自己的模型：默认它先答，额度用完/出错才轮到 Cloudflare
 	const ok = all.filter((p) => !kp.skip?.[p.model]); // 被熔断的模型先跳过；全被熔断就都试（总得有人答）
 	const list = ok.length ? ok : all;
-	if (!list.length) throw new MaxErr("Max 今天的额度用完了，明天再来" + (key ? "" : "（可以接 DeepSeek 备用）"));
+	if (!list.length) throw new MaxErr("Max 今天的额度用完了，明天再来" + (key ? "" : "（可以在设置里填一个模型密钥）"));
 	return list;
 }
 
 /** 两个引擎的状态（灵动岛顶部显示；DeepSeek 用一句极短的话试通，结果缓存 12 小时） */
 export async function status(env: Env, fresh = false) {
-	const db = env.DB, key = (env as any).DEEPSEEK_API_KEY as string | undefined;
+	const db = env.DB, cfg = await aiCfg(env), key = cfg?.key;
 	const [cf, ds, cfn, dsn] = await Promise.all([used(db), meter(db, "ds:"), meter(db, "maxn:"), meter(db, "dsn:")]);
 	let dsOk: string | null = key ? (fresh ? null : await cacheGet(db, "dsping", 12)) : "未设置密钥"; // 12 小时试一次密钥（设置页可手动重试）
 	let bal: string | null = key ? (fresh ? null : await cacheGet(db, "dsbal", 0.5)) : null;
@@ -106,15 +108,15 @@ export async function status(env: Env, fresh = false) {
 		const H = { authorization: "Bearer " + key, "content-type": "application/json" };
 		if (!dsOk) {
 			try {
-				const r = await fetch("https://api.deepseek.com/chat/completions", { method: "POST", signal: AbortSignal.timeout(10000), headers: H,
-					body: JSON.stringify({ model: (env as any).DEEPSEEK_MODEL || "deepseek-chat", messages: [{ role: "user", content: "回复ok" }], max_tokens: 3 }) });
+				const r = await fetch(chatUrl(cfg!), { method: "POST", signal: AbortSignal.timeout(10000), headers: H,
+					body: JSON.stringify({ model: cfg!.model, messages: [{ role: "user", content: "回复ok" }], max_tokens: 3 }) });
 				dsOk = r.ok ? "ok" : r.status === 401 ? "密钥不对" : r.status === 402 ? "余额不足" : `出错 ${r.status}`;
 			} catch { dsOk = "连不上"; }
 			await cachePut(db, "dsping", dsOk);
 		}
-		if (!bal) { // 余额（DeepSeek 官方接口，不花 token）
+		if (!bal && isDeepSeek(cfg!)) { // 余额（只有 DeepSeek 官方有这个接口，不花 token）
 			try {
-				const r = await fetch("https://api.deepseek.com/user/balance", { signal: AbortSignal.timeout(8000), headers: H });
+				const r = await fetch(new URL(cfg!.base).origin + "/user/balance", { signal: AbortSignal.timeout(8000), headers: H });
 				const j: any = r.ok ? await r.json() : null, b = j?.balance_infos?.[0];
 				bal = b ? `${b.currency === "CNY" ? "¥" : b.currency + " "}${b.total_balance}` : "";
 			} catch { bal = ""; }
@@ -130,11 +132,11 @@ export async function status(env: Env, fresh = false) {
 	return {
 		kimi,
 		cfu: { used: Math.min(cf, FREE), cap: FREE, pct: Math.min(100, Math.round((cf / FREE) * 1000) / 10), calls: cfn, out: cf >= DAILY },
-		ds: { on: dsOk === "ok", msg: dsOk, used: ds, cap: DS_DAILY, pct: Math.round((ds / DS_DAILY) * 1000) / 10, calls: dsn, balance: bal || null },
+		ds: { on: dsOk === "ok", name: cfg?.name ?? "我的模型", model: cfg?.model ?? "", prefer: !!cfg?.prefer, msg: dsOk, used: ds, cap: DS_DAILY, pct: Math.round((ds / DS_DAILY) * 1000) / 10, calls: dsn, balance: bal || null },
 		chats: { used: chats, cap: 300 }, sec: sec?.n ?? 0,
 	};
 }
-export const hasDs = async (env: Env) => !!(env as any).DEEPSEEK_API_KEY && (await meter(env.DB, "ds:")) < DS_DAILY;
+export const hasDs = async (env: Env) => !!(await aiCfg(env)) && (await meter(env.DB, "ds:")) < DS_DAILY;
 
 /** 一次问答，返回完整文本 */
 // 总管超时或额度用完：同一次里别再试总管的替补模型（多半也慢/也没额度），直接换 DeepSeek，免得两边都花
@@ -347,14 +349,14 @@ export async function refine(env: Env, ids: number[]): Promise<string> {
 	}
 }
 
-// ---------- 首页：今天先做什么 + 薄弱点 + 考前冲刺（一次调用，按天缓存，做题有变化且过了 3 小时才重算） ----------
-const BRIEF_SYS = `按数据给初三学生排今天的练习。只输出 JSON：
-{"say":"≤30字先做什么","order":[候选题号≤10个按先后],"weak":"≤30字","sprint":"≤30字冲刺重点，无考试则空"}
-排序依据：薄弱考点的错题优先；离考试越近越偏向考试科目和薄弱点；到期复习的不要漏；「旧错题」是以前错过的同考点题，薄弱点突出时可以穿插 1-3 道。`;
+// ---------- 首页：今天先做什么 + 薄弱点（一次调用，按天缓存，做题有变化且过了 3 小时才重算） ----------
+const BRIEF_SYS = `按数据给初三学生排今天的练习（这是练习册，没有考试和时限）。只输出 JSON：
+{"say":"≤30字先做什么","order":[候选题号≤10个按先后],"weak":"≤30字最该补的知识点和怎么补"}
+排序依据：薄弱考点的错题优先；到期复习的不要漏；「旧错题」是以前错过的同考点题，薄弱点突出时可以穿插 1-3 道。`;
 
 export async function brief(env: Env, force = false, ctx?: ExecutionContext): Promise<any> {
 	const db = env.DB, d = today();
-	const [stats, due, fresh, exams] = await Promise.all([
+	const [stats, due, fresh] = await Promise.all([
 		db.prepare(`SELECT a.subject, COALESCE(q.topic, a.topic, q.category, '未分类') topic, COUNT(*) n, SUM(a.is_correct = 0) wrong
 			FROM attempts a LEFT JOIN questions q ON q.id = a.question_id
 			WHERE a.status = '已判' AND a.created_at > datetime('now', '-30 days') GROUP BY 1, 2 HAVING wrong > 0 ORDER BY wrong * 1.0 / n DESC, wrong DESC LIMIT 8`).all<{ subject: string; topic: string; n: number; wrong: number }>(),
@@ -362,10 +364,8 @@ export async function brief(env: Env, force = false, ctx?: ExecutionContext): Pr
 			WHERE r.next_date <= ? AND q.status = 'active' AND ${live()} AND NOT EXISTS (SELECT 1 FROM attempts ap WHERE ap.question_id = q.id AND ap.status = '待批改') ORDER BY r.next_date LIMIT 20`).bind(d).all<any>(),
 		db.prepare(`SELECT q.id, q.subject, q.no, COALESCE(q.topic, q.category) topic, substr(q.stem, 1, 40) stem FROM questions q
 			WHERE q.status = 'active' AND ${live()} AND ${ready()} AND COALESCE(q.topic, '') <> '' AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.question_id = q.id) ORDER BY q.id DESC LIMIT 20`).bind(d).all<any>(),
-		db.prepare("SELECT v FROM meta WHERE k = 'exams'").first<{ v: string }>(),
 	]);
 	const weak = stats.results.slice(0, 5);
-	const soon = arr(exams?.v).map((e: any) => ({ ...e, days: Math.round((Date.parse(e.date) - Date.parse(d)) / 864e5) })).filter((e: any) => e.days >= 0 && e.days <= 7);
 	// 薄弱考点的题（错过的优先）给「练薄弱点」「冲刺」按钮；以前错过的薄弱考点题（含已进错题文件夹的）给 Max 挑几道穿插着练——两个查询同时跑
 	const seen = [...due.results, ...fresh.results].map((q) => q.id);
 	const [weakIds, old] = weak.length ? await Promise.all([
@@ -378,8 +378,7 @@ export async function brief(env: Env, force = false, ctx?: ExecutionContext): Pr
 			.bind(...seen, ...weak.flatMap((w) => [w.subject, w.topic])).all<any>().then((r) => r.results),
 	]) : [[] as number[], [] as any[]];
 	const cands = [...due.results.map((q) => ({ ...q, kind: "复习" })), ...fresh.results.map((q) => ({ ...q, kind: "新题" })), ...old.map((q) => ({ ...q, kind: "旧错题" }))];
-	const exs = arr(exams?.v).map((e: any) => ({ ...e, days: Math.round((Date.parse(e.date) - Date.parse(d)) / 864e5) })).filter((e: any) => e.days >= 0 && e.days <= 60);
-	const base = { topics: weak, weakIds, soon, cands: cands.length };
+	const base = { topics: weak, weakIds, cands: cands.length };
 	// stale：交卷后（br:dirty 比缓存新）且缓存超过 30 分钟 → 重算一次（不是每交一次都算，省额度）
 	const hit = await db.prepare(`SELECT v, at > datetime('now', '-10 minutes') recent, at < datetime('now', '-30 minutes') AND at < COALESCE((SELECT v FROM meta WHERE k = 'br:dirty'), '') stale FROM max_cache WHERE k = ?`)
 		.bind("br:" + d).first<{ v: string; recent: number; stale: number }>();
@@ -388,23 +387,23 @@ export async function brief(env: Env, force = false, ctx?: ExecutionContext): Pr
 	// 推荐顺序：Max 排的（去掉已做的）在前，白天新进来的题按复习顺序补到 10 道
 	const fill = (order: number[]) => { const left = new Set(cands.map((q) => q.id)), o = order.filter((id) => left.has(id)); for (const q of cands) { if (o.length >= 10) break; if (!o.includes(q.id)) o.push(q.id); } return o; };
 	if (prev && !hit!.stale && (!force || hit!.recent)) return { ...base, ...prev.r, order: fill(prev.r.order), cached: true };
-	if (!force && (await cacheGet(db, "brfail", 0.5))) return { ...base, say: "Max 暂时不在，先按复习顺序做", order: fill([]), weakTip: "", sprint: "" }; // 刚失败过：半小时内不重试，免得每次刷新都花额度
-	if (!cands.length && !weak.length) return { ...base, say: "题库还空着，拍照上传错题或让 Claude 出题吧", order: [], weakTip: "", sprint: "" };
+	if (!force && (await cacheGet(db, "brfail", 0.5))) return { ...base, say: "Max 暂时不在，先按复习顺序做", order: fill([]), weakTip: "" }; // 刚失败过：半小时内不重试，免得每次刷新都花额度
+	if (!cands.length && !weak.length) return { ...base, say: "题库还空着，拍照上传错题或让 Claude 出题吧", order: [], weakTip: "" };
 	if (ctx) { await enqueueNow(env, ctx, "brief"); return { ...base, ...(prev?.r ?? {}), order: fill(prev?.r?.order ?? []), say: prev?.r?.say || "Max 正在想今天的建议…", thinking: true }; } // 排进后台任务（见 jobs.ts），这次先给旧的或占位
 	try {
-		const user = [`今天 ${d}`, exs.length ? `考试：${exs.map((e: any) => `${e.name}（${e.days}天后）`).join("、")}` : "近两个月没有考试",
+		const user = [`今天 ${d}`,
 			`近30天错得多的考点：${weak.map((w) => `${w.subject}/${w.topic} 错${w.wrong}/${w.n}`).join("；") || "无"}`,
 			`候选题（题号｜类型｜科目考点｜题干开头）：\n${cands.map((q) => `${q.id}｜${q.kind}${q.stage != null ? "第" + (q.stage + 1) + "轮" : ""}｜${q.subject}/${q.topic || "?"}｜${q.stem}`).join("\n")}`].join("\n");
 		const r = json<any>(await ask(env, [{ role: "system", content: BRIEF_SYS }, { role: "user", content: user }], { max: 400, ok: isObj })) ?? {};
 		const ok = new Set(cands.map((q) => q.id));
-		const out = { say: String(r.say || "").slice(0, 120), order: (Array.isArray(r.order) ? r.order : []).map(Number).filter((x: number) => ok.has(x)).slice(0, 10), weakTip: String(r.weak || "").slice(0, 160), sprint: soon.length ? String(r.sprint || "").slice(0, 160) : "" };
+		const out = { say: String(r.say || "").slice(0, 120), order: (Array.isArray(r.order) ? r.order : []).map(Number).filter((x: number) => ok.has(x)).slice(0, 10), weakTip: String(r.weak || "").slice(0, 160) };
 		out.order = fill(out.order);
 		await cachePut(db, "br:" + d, JSON.stringify({ r: out }));
 		return { ...base, ...out };
 	} catch (e) {
 		await cachePut(db, "brfail", "1");
 		const say = e instanceof MaxErr ? e.message : "Max 暂时不在，先按复习顺序做";
-		return { ...base, say, weakTip: "", sprint: "", ...(prev?.r ?? {}), order: fill(prev?.r?.order ?? []) };
+		return { ...base, say, weakTip: "", ...(prev?.r ?? {}), order: fill(prev?.r?.order ?? []) };
 	}
 }
 
@@ -424,15 +423,15 @@ const DRAW_DOC = `需要配图讲得更清楚时（几何、函数图像、受�
  其它 t：seg/line/ray（a,b 写点名，"d":1 虚线，"c":"red"）、circle（o,r）、angle（at,a,b,s 角弧标注）、fn（expr:"y=x^2-2x"，配 "axes":1）、force（a,b,n）。
 电路（格点，y 向下）：{"circuit":1,"items":[{"t":"cell","a":[0,0],"b":[2,0]},{"t":"sw","a":[4,0],"b":[6,0],"on":1},{"t":"lamp","a":[6,2],"b":[6,4],"n":"L1"},{"t":"wire","pts":[[2,0],[4,0]]},{"t":"wire","pts":[[6,0],[6,2]]},{"t":"wire","pts":[[6,4],[0,4],[0,0]]}]}
  元件 t：cell 电源/sw 开关/lamp 灯/res 电阻/rheo 滑动变阻器/am 电流表/vm 电压表/motor/bell/led/fuse；横放或竖放；导线把各端连成回路。`;
-// 网站动作：学生明确要 Max 做事（清空、设考试、整理）时才附上；按钮点了先确认
-const ACT_RE = /清|删|标记|文件夹|收件箱|照片|总结|整理|分类|考试|倒计时|复习|放回|日期|推迟|提前/;
+// 网站动作：学生明确要 Max 做事（清空、整理）时才附上；按钮点了先确认
+const ACT_RE = /清|删|历史|记录|标记|文件夹|收件箱|照片|总结|整理|分类|复习|放回|日期|推迟|提前/;
 const ACT_DOC = `学生明确要你在网站上做事时才用（别主动做），单独一行写 [[做:动作]] 或 [[做:动作|参数]]，网站会先弹确认、数清楚数量再执行：
-[[做:清空标记]] 标记的题 · [[做:清空错题本]] · [[做:清空错题文件夹]] · [[做:清空照片收件箱]] · [[做:清空总结]] · [[做:整理错题]] · [[做:整理分类]] · [[做:设考试|名称|YYYY-MM-DD]]
+[[做:清空标记]] 标记的题 · [[做:清空错题本]] · [[做:清空错题文件夹]] · [[做:清空照片收件箱]] · [[做:清空总结]] · [[做:整理错题]] · [[做:整理分类]] · [[做:清空历史记录]]（作答记录、总结、缓存；题和错题本都留着）
 [[做:放回复习|数学3,物理12]] 题号放回复习、今天做 · [[做:改复习日期|数学3,物理12|YYYY-MM-DD]] · [[做:标记题目|数学3]]（题号写「科目+数字」）
 [[做:清理题库|{"groups":[…]}]] 删题：先想清楚学生要删哪些，翻成条件组，组与组是「或」，组内同时满足。条件：subject 科目（数学/物理/化学/语文/道法/历史/英语）；topic 考点关键词；tags 题型标签，逗号分隔，可用 选择,填空,计算,解答,证明,作图,函数,电路,光路,受力,简答；pending:true 有待批改的作答；undone:true 没做过；done:true 做过。
 例：清掉待批改的题、数学题和物理作图题 → [[做:清理题库|{"groups":[{"pending":true},{"subject":"数学"},{"subject":"物理","tags":"作图,函数,电路,光路,受力,证明"}]}]]
 待批改的题默认保护，学生没说删待批改就别加 pending。学生说的范围含糊（如「那些没用的」）就先问清楚，不要猜着删。
-作答记录是统计，不删；整站清空不做。`;
+作答记录只有「清空历史记录」会删；整站清空不做。`;
 const WEB_NOTE = "有“联网搜索结果”时优先依据结果回答，结尾写“来源：网站名”；结果不相关或没搜到就如实说，不编造。";
 
 // len：回答长短（s 简洁省额度 / m 标准 / l 详细）；pref：优先引擎（auto 自动 / ds 尽量 DeepSeek / cf 只用 Cloudflare）
@@ -787,7 +786,7 @@ export async function wrongSummary(env: Env, force = false, ctx?: ExecutionConte
 	else if (want) {
 		try {
 			const notes = rs.filter((r) => r.max_note).slice(0, 15).map((r) => `${r.subject}/${r.topic || "?"}：${r.max_note}`).join("\n");
-			summary = await ask(env, [{ role: "system", content: "据错因统计和诊断，≤80字说初三学生最主要的问题和下一步怎么练。" },
+			summary = await ask(env, [{ role: "system", content: "据错因统计和诊断，≤120字：说初三学生最主要的问题、最该先补的 2-3 个考点，以及下一步怎么练（先做什么、做几道）。" },
 				{ role: "user", content: `错因统计：${JSON.stringify(max)}\n诊断：\n${notes || "无"}` }], { max: 200 });
 			await db.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('wsum', ?)").bind(JSON.stringify({ text: summary, sig })).run();
 		} catch { summary = saved?.text ?? null; await cachePut(db, "wsfail", "1"); } // 失败半小时内不自动重试

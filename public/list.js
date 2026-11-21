@@ -68,7 +68,19 @@ function render() {
 	list.replaceChildren();
 	if (!shown.length) list.append(el("p", { className: "mute", textContent: MODE === "wrong" ? (tab === "mastered" ? "文件夹是空的，错题重做做对后会放进来" : "还没有错题，做错的题会自动收进来") : "还没有题" }));
 	if (!shown.length) list.append(el("p", { className: "frline" }, fr(MODE === "wrong" ? "Rien à corriger ! Bravo." : "Tout est fait ! Repose-toi un peu.")));
-	shown.forEach((q, i) => { const r = row(q); if (i < 16) r.style.setProperty("--i", i); list.append(r); }); // 前 16 条依次浮现
+	// 错题本：按 科目 › 章节 › 考点 排好，每个考点一个小标题（几题 + 一键重做这组），一眼看出哪块错得多
+	if (MODE === "wrong") shown.sort((a, b) => a.subject.localeCompare(b.subject, "zh") || (a.category || "~").localeCompare(b.category || "~", "zh") || (a.topic || "~").localeCompare(b.topic || "~", "zh"));
+	const gk = (q) => [q.subject, q.category || "", q.topic || ""].join("›");
+	let last = "";
+	shown.forEach((q, i) => {
+		if (MODE === "wrong" && gk(q) !== last) {
+			last = gk(q);
+			const grp = shown.filter((x) => gk(x) === last), redo = grp.filter((x) => tab === "active" && !x.pending);
+			list.append(el("div", { className: "grp" }, el("b", { textContent: [subject ? "" : q.subject, subject && cat ? "" : q.category, q.topic || "未分考点"].filter(Boolean).join(" › ") }),
+				el("span", { className: "mute", textContent: `${grp.length} 题` }), redo.length ? el("a", { href: quizHref(redo.map((x) => x.id).slice(0, 50)), textContent: "重做这组" }) : ""));
+		}
+		const r = row(q); if (i < 16) r.style.setProperty("--i", i); list.append(r);
+	}); // 前 16 条依次浮现
 	math(list);
 }
 
@@ -139,20 +151,31 @@ async function loadSum() {
 			el("div", {}, el("span", { textContent: k }), el("i", { style: `width:${Math.round((n / s.total) * 100)}%` }), el("b", { textContent: n }))),
 			rest.length ? el("p", { className: "mute", textContent: `另有 ${rest.length} 类，各 1-${rest[0][1]} 道` }) : "");
 	};
-	const org = !s.todo ? "" : el("button", { type: "button", className: "btn small", textContent: `{folder}让 Max 整理（${s.todo} 道没整理）`, onclick: async () => {
-		const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 150000);
-		org.disabled = true; org.textContent = "整理中…";
-		try { await api("/api/max/organize", { method: "POST", signal: ctl.signal }); load(); }
-		catch (e) { toast(ctl.signal.aborted ? "Max 整理太久了，稍后再点一次" : e.message); }
-		finally { clearTimeout(t); org.disabled = false; lab(org, "{folder}让 Max 整理"); }
-	} });
+	// 一键智能整理：Max 分析没整理的错题（每轮 10 道，最多 5 轮）→ 合并同义考点、归章节 → 重写总结；做完刷新
+	const orgLabel = s.todo ? `{folder}一键整理（${s.todo} 道待分析）` : "{folder}一键整理";
+	const org = el("button", { type: "button", className: "btn small", textContent: orgLabel });
+	org.onclick = async () => {
+		org.disabled = true;
+		try {
+		for (let i = 0; i < 5; i++) {
+			org.textContent = "Max 分析错题中…";
+			const r = await api("/api/max/organize", { method: "POST" });
+			if (!r.left) break;
+		}
+		org.textContent = "整理分类中…";
+		await api("/api/max/classify", { method: "POST" });
+		await pollUntil("/api/max/classify", (x) => x.status !== "running");
+		await api("/api/max/wrongsum?force=1").catch(() => {});
+		dropCache(); load(); toast("错题本整理好了");
+		} catch (e) { toast(e.message); } finally { org.disabled = false; lab(org, orgLabel); }
+	};
 	$("#maxsum").replaceChildren(el("div", { className: "card maxcard" },
 		el("h2", { textContent: `错因分析（${s.total} 道错题）` }),
 		s.summary ? el("p", { textContent: "{max}" + s.summary }) : "",
 		Object.keys(s.max).length ? el("div", { className: "why2" }, el("div", {}, el("b", { textContent: "Max 看题分析的错因" }), bars(s.max))) : "",
 		el("div", { className: "row" }, org,
 			s.stale ? el("button", { type: "button", className: "btn small", textContent: "↻ 让 Max 重新总结", onclick: async (e) => { e.target.disabled = true; await api("/api/max/wrongsum?force=1").catch(() => {}); dropCache(); load(); } }) : "",
-			el("button", { type: "button", className: "btn small", textContent: "问 Max", onclick: () => Max.open({}, "总结这页的错题，最该先补哪块？") }))));
+			el("button", { type: "button", className: "btn small", textContent: "{max}学习诊断", onclick: () => Max.open({}, "分析这页的错题：我最薄弱的 3 个考点、典型错因，接下来该怎么练？给我练习按钮") }))));
 	const top = Object.entries(s.max).filter(([k]) => k !== "待分析").sort((a, b) => b[1] - a[1])[0];
 	Max.tip(`错题 ${s.total} 道` + (top ? `，最多的错因：${top[0]}` : s.todo ? `，Max 正在分析错因` : ""));
 }

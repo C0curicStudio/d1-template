@@ -4,7 +4,7 @@
 // 思考/回答时标志的光芒一伸一缩、慢慢转。Max 能读当前页面文字，随时总结分析。
 // 其它脚本：Max.open(ctx, 问题) 带上下文提问；Max.setCtx(ctx) 换上下文；Max.tip(文字) 在球旁边短暂提示（本地算的，不花额度）。
 // ctx：{ q: 正在做的题 } { a: 已交的作答 } { explain: 作答id（一键讲解，有缓存）} { marked: true（解析标记的题）} { tmp: 临时练习题（不在题库）}
-// 输入框上面两个标签：深度思考（只用 DeepSeek 的思考模型）、联网搜索（先搜网页再回答），点一下开、再点关；状态记在本标签页
+// 输入框上面两个标签：深度思考（用你接入的思考模型）、联网搜索（先搜网页再回答），点一下开、再点关；状态记在本标签页
 const Max = (() => {
 	const KEY = "max_chat", POS = "max_pos", IDLE = 3000, M = 10; // M：离屏幕边的距离
 	const ss = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch {} return null; };
@@ -17,7 +17,7 @@ const Max = (() => {
 	const tg = (() => { try { const t = JSON.parse(ss("max_tg") || "{}"); return { deep: !!t.deep, web: !!t.web }; } catch { return { deep: false, web: false }; } })();
 	const line = (d) => `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 	const TAGS = [
-		["deep", "深度思考", "只用 DeepSeek 的思考模型，想得更深、更慢", line('<path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 00-3.6 10.8c.6.5 1.1 1.3 1.1 2.1V16h5v-.1c0-.8.5-1.6 1.1-2.1A6 6 0 0012 3z"/>')],
+		["deep", "深度思考", "用你接入的思考模型，想得更深、更慢", line('<path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 00-3.6 10.8c.6.5 1.1 1.3 1.1 2.1V16h5v-.1c0-.8.5-1.6 1.1-2.1A6 6 0 0012 3z"/>')],
 		["web", "联网搜索", "先搜网页再回答（说明来源）", line('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 3.9 5.7 3.9 9s-1.3 6.3-3.9 9c-2.6-2.7-3.9-5.7-3.9-9S9.4 5.7 12 3z"/>')],
 	];
 	const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
@@ -178,14 +178,14 @@ const Max = (() => {
 			const b = el("button", { type: "button", className: "mtag" + (tg[k] ? " on" : ""), title: tip, innerHTML: icon + `<span>${name}</span>` });
 			b.setAttribute("aria-pressed", String(tg[k]));
 			b.onclick = () => {
-				if (k === "deep" && !tg.deep && ui?.dsOn === false) return toast("深度思考只能用 DeepSeek，现在没接上（看设置页）");
+				if (k === "deep" && !tg.deep && ui?.dsOn === false) return toast("深度思考要先接入模型：点右上角齿轮，填密钥");
 				tg[k] = !tg[k]; ss("max_tg", JSON.stringify(tg));
 				b.classList.toggle("on", tg[k]); b.setAttribute("aria-pressed", String(tg[k]));
 				input.placeholder = ph();
 			};
 			return b;
 		}));
-		const ph = () => (tg.deep && tg.web ? "深度思考 + 联网搜索…" : tg.deep ? "深度思考（DeepSeek）…" : tg.web ? "联网搜索…" : "问 Max…");
+		const ph = () => (tg.deep && tg.web ? "深度思考 + 联网搜索…" : tg.deep ? "深度思考…" : tg.web ? "联网搜索…" : "问 Max…");
 		input.placeholder = ph();
 		const sub = el("span", { className: "msub", textContent: "能看到当前页面 · 难题找 Claude" });
 		const gear = el("button", { type: "button", className: "mgear", title: "用量和设置", innerHTML: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>' });
@@ -211,7 +211,7 @@ const Max = (() => {
 		ui.status = () => { // 两个引擎的状态：打开窗口时才查，10 分钟内用缓存
 			if (ui.statusDone) return;
 			ui.statusDone = true;
-			const show = (ui.show = (s) => { ui.dsOn = !!s.ds.on; sub.textContent = `Cloudflare ${s.cfu.pct}% · DeepSeek ${s.ds.on ? (s.ds.pct ?? 0) + "%" : "未接上"} · 看详情`; });
+			const show = (ui.show = (s) => { ui.dsOn = !!s.ds.on; ui.dsName = s.ds.name || "我的模型"; sub.textContent = `Cloudflare ${s.cfu.pct}% · ${ui.dsName} ${s.ds.on ? (s.ds.pct ?? 0) + "%" : "未接入"} · 看详情`; });
 			let st = null; try { st = JSON.parse(ss("max_st") || "null"); } catch {}
 			if (st && Date.now() - st.at < 600000) show(st.s);
 			else api("/api/max/status").then((s) => { show(s); ss("max_st", JSON.stringify({ at: Date.now(), s })); }).catch(() => {});
@@ -234,7 +234,46 @@ const Max = (() => {
 		st.left = x + "px"; st.top = y + "px";
 		st.transformOrigin = `${b.left + b.width / 2 - x}px ${b.top + b.height / 2 - y}px`;
 	}
-// ---------- 设置页（齿轮）：两个引擎今天的用量 + 几个常用开关和工具 ----------
+// ---------- 接入模型：密钥在这里填（存到服务器数据库，不用去 Cloudflare 后台加变量；只显示尾号，不会再传回浏览器） ----------
+	const PRESETS = { DeepSeek: ["https://api.deepseek.com", "deepseek-chat", "deepseek-reasoner"], 通义千问: ["https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus", ""],
+		智谱: ["https://open.bigmodel.cn/api/paas/v4", "glm-4-flash", ""], Kimi: ["https://api.moonshot.cn/v1", "moonshot-v1-8k", ""], 自定义: ["", "", ""] };
+	function modelForm() {
+		const box = el("div", { className: "mform" }), state = el("p", { className: "mute mnote", style: "margin:0 0 6px", textContent: "读取中…" });
+		const inp = (ph, type = "text") => el("input", { type, placeholder: ph, autocomplete: "off", spellcheck: false });
+		const sel = el("select", {}, ...Object.keys(PRESETS).map((k) => el("option", { value: k, textContent: k })));
+		const key = inp("密钥（sk-…）", "password"), base = inp("接口地址 https://…"), model = inp("模型名"), deep = inp("深度思考模型（可空）");
+		const prefer = el("input", { type: "checkbox", checked: true });
+		sel.onchange = () => { const [b, m, d] = PRESETS[sel.value]; base.value = b; model.value = m; deep.value = d; };
+		const apply = (c) => {
+			if (!c.on) { state.textContent = "还没接入：填一个模型密钥，Max 的批改、讲题、出题、分析都会用它（不填也能用 Cloudflare 免费额度）。"; sel.onchange(); return; }
+			state.textContent = `已接入：${c.name} · ${c.model} · 密钥 …${c.tail}`;
+			sel.value = PRESETS[c.name] ? c.name : "自定义"; base.value = c.base; model.value = c.model; deep.value = c.reasoner || ""; prefer.checked = c.prefer; key.placeholder = "密钥已保存（不改就留空）";
+		};
+		const btn = (t, f) => el("button", { type: "button", className: "mtool", textContent: t, onclick: async (e) => {
+			const b = e.currentTarget, old = b.textContent; b.disabled = true; b.textContent = "…";
+			try { await f(); } catch (err) { toast(err.message); }
+			b.disabled = false; b.textContent = old;
+		} });
+		const refresh = (c) => { apply(c); window.dispatchEvent(new Event("max:changed")); ss("max_st", ""); if (ui) { ui.statusDone = false; ui.status?.(); } };
+		box.append(state, el("div", { className: "mrow" }, el("span", { textContent: "服务商" }), sel), key, base, model, deep,
+			el("label", { className: "mrow mchk" }, el("span", { textContent: "默认优先用它（更聪明），Cloudflare 兜底" }), prefer),
+			el("div", { className: "mtools" },
+				btn("保存并测试", async () => { refresh(await api("/api/ai/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: sel.value === "自定义" ? "我的模型" : sel.value, key: key.value, base: base.value, model: model.value, reasoner: deep.value, prefer: prefer.checked }) })); key.value = ""; toast("接入成功"); }),
+				btn("清除密钥", async () => { if (confirm("清除后 Max 只用 Cloudflare 免费额度，确定？")) { refresh(await api("/api/ai/config", { method: "DELETE" })); key.placeholder = "密钥（sk-…）"; } })));
+		api("/api/ai/config").then(apply).catch((e) => { state.textContent = "读取失败：" + e.message; });
+		return box;
+	}
+	// 清空历史记录：先数一数、确认才做（题库、错题本保留）
+	async function clearHistory() {
+		const post = (dry) => api("/api/max/do", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "清空历史记录", arg: "", dry }) });
+		const r = await post(true);
+		if (r.empty) return r.msg;
+		if (!confirm(r.msg + "\n确定执行吗？")) return "";
+		const f = await post(false);
+		window.dispatchEvent(new Event("max:changed"));
+		return f.msg;
+	}
+	// ---------- 设置页（齿轮）：模型接入 + 两个引擎今天的用量 + 几个常用开关和工具 ----------
 	function settings(box, fresh) {
 		const bar = (pct, warn) => el("div", { className: "mbar" + (warn ? " warn" : "") }, el("i", { style: `width:${Math.min(100, pct)}%` }));
 		const n = (x) => Number(x).toLocaleString("zh-CN");
@@ -248,10 +287,11 @@ const Max = (() => {
 		} });
 		const usage = el("div", { className: "musage" }, el("p", { className: "mute", textContent: "正在读取用量…" }));
 		box.replaceChildren(
+			el("h3", { textContent: "接入模型" }), modelForm(),
 			el("h3", { textContent: "今日用量" }), usage,
 			el("h3", { textContent: "设置" }),
 			seg("回答长短", "len", [["s", "简洁省额度"], ["m", "标准"], ["l", "详细"]]),
-			seg("优先用", "pref", [["auto", "自动"], ["ds", "DeepSeek"], ["cf", "只用 Cloudflare"]]),
+			seg("优先用", "pref", [["auto", "自动"], ["ds", "我的模型"], ["cf", "只用 Cloudflare"]]),
 			seg("悬浮球闲置", "fade", [[0.2, "淡到 20%"], [0.5, "50%"], [1, "不变淡"]]),
 			el("h3", { textContent: "工具" }),
 			el("div", { className: "mtools" },
@@ -265,10 +305,11 @@ const Max = (() => {
 					return s.n ? `整理好 ${s.n} 个考点` : "没有新考点，不用整理";
 				}),
 				tool("{pulse}Kimi 自检", async () => { const r = await api("/api/max/kimi", { method: "POST" }); box.querySelector(".mkimi")?.remove(); box.querySelector(".mtools").after(el("p", { className: "mute mnote mkimi", style: "white-space:pre-wrap", textContent: "Kimi 自检：" + r.text })); return r.ai ? "发现问题，结果在下面" : "自检完成"; }),
-				tool("{plug}检查 DeepSeek", async () => { settings(box, true); return ""; }),
+				tool("{plug}检查模型连接", async () => { settings(box, true); return ""; }),
+				tool("{trash}清空历史记录", clearHistory),
 				tool("{locate}悬浮球归位", async () => { pos = { side: "r", y: 1 }; ls(POS, JSON.stringify(pos)); snap(); return "已归位"; }),
 				tool("{eraser}清空对话", async () => { stop(); hist = []; keep(); oneOff(); ui.log.replaceChildren(); hello(); quick(); return "对话已清空"; })),
-			el("p", { className: "mute mnote", textContent: "Cloudflare 免费额度每天北京时间 8 点重置；用量按模型返回的 token 数折算，和 Cloudflare 后台可能略有出入。DeepSeek 每天最多用 40 万 token（防止多花钱）。" }));
+			el("p", { className: "mute mnote", textContent: "Cloudflare 免费额度每天北京时间 8 点重置；用量按模型返回的 token 数折算，和 Cloudflare 后台可能略有出入。我的模型每天最多用 80 万 token（防止多花钱）。" }));
 		api("/api/max/status" + (fresh ? "?fresh=1" : "")).then((s) => {
 			ss("max_st", JSON.stringify({ at: Date.now(), s }));
 			ui.show?.(s); // 顶部小字也跟着更新
@@ -276,7 +317,7 @@ const Max = (() => {
 				el("div", { className: "mline" }, el("b", { textContent: "Cloudflare（主力）" }), el("span", { textContent: `${s.cfu.pct}%` })),
 				bar(s.cfu.pct, s.cfu.pct >= 85),
 				el("p", { className: "mute", textContent: `约 ${n(s.cfu.used)} / ${n(s.cfu.cap)} 神经元 · 调用 ${s.cfu.calls} 次${s.cfu.out ? " · 今天额度已用完" : ""}` }),
-				el("div", { className: "mline" }, el("b", { textContent: "DeepSeek（备用）" }), el("span", { textContent: s.ds.on ? `${s.ds.pct}%` : "未接上" })),
+				el("div", { className: "mline" }, el("b", { textContent: (s.ds.name || "我的模型") + (s.ds.prefer ? "（主力）" : "（备用）") }), el("span", { textContent: s.ds.on ? `${s.ds.pct}%` : "未接入" })),
 				bar(s.ds.pct, s.ds.pct >= 85),
 				el("p", { className: "mute", textContent: s.ds.on ? `${n(s.ds.used)} / ${n(s.ds.cap)} token · 调用 ${s.ds.calls} 次${s.ds.balance ? " · 余额 " + s.ds.balance : ""}` : `状态：${s.ds.msg}` }),
 				el("p", { className: "mute", textContent: `今天和 Max 聊了 ${s.chats.used} / ${s.chats.cap} 次${s.sec ? ` · 拦截可疑访问 ${s.sec} 次` : ""}` }));
@@ -335,7 +376,7 @@ const Max = (() => {
 		if (!hist.length) bubble("assistant", greetFr() + "\u202f! " + (ctx.q ? "我是 Max。卡住了问我要提示（不会直接给答案）。" : "我是 Max，管错题本的助手。可以让我总结这页、整理错题、安排今天先做什么，或者讲一道做错的题。"));
 	}
 	function quick() { // 按页面给几个常用问题
-		const more = hist.length && hist[hist.length - 1].role === "assistant" ? ["没懂，再讲详细点"] : []; // 「没懂」会交给 DeepSeek
+		const more = hist.length && hist[hist.length - 1].role === "assistant" ? ["没懂，再讲详细点"] : []; // 「没懂」会交给我的模型
 		const list = ctx.q ? [...more, "给我一点提示", "这题考什么？"] : ctx.a ? [...more, "讲讲这道题", "类似的易错点？"]
 			: location.pathname === "/wrong" ? [...more, "总结这页的错题", "整理错题本", "最该先补哪块？"]
 			: [...more, "总结这页", "今天先做什么？", "我的薄弱点？"];
@@ -530,7 +571,7 @@ const Max = (() => {
 			paint(out, all, true);
 			if (ok) {
 				hist.push({ role: "assistant", content: all }); keep();
-				const by = { cf: "Cloudflare 回答", ds: deep ? "DeepSeek 深度思考" : "DeepSeek 回答", cache: "之前讲过（没花额度）" }[eng];
+				const by = { cf: "Cloudflare 回答", ds: deep ? (ui?.dsName || "我的模型") + " 深度思考" : (ui?.dsName || "我的模型") + " 回答", cache: "之前讲过（没花额度）" }[eng];
 				if (by) out.append(el("div", { className: "meng", textContent: by + (webN == null ? "" : webN === "0" ? " · 联网没搜到" : ` · 联网 ${webN} 条`) }));
 				quick(); // 出现「没懂，再讲详细点」
 			}

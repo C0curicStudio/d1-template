@@ -1,5 +1,5 @@
-// Max 的网站动作：学生让 Max 做事（清空标记、清空错题文件夹、设考试…）时，Max 给一个 [[做:动作]] 按钮。
-// 点了先 dry=1 数一数、弹确认，确认后才真做。作答记录是统计数据，不删；整站清空不做（要删题用「清理题库」按科目/考点）。
+// Max 的网站动作：学生让 Max 做事（清空标记、清空历史记录、整理错题…）时，Max 给一个 [[做:动作]] 按钮。
+// 点了先 dry=1 数一数、弹确认，确认后才真做。作答记录只有「清空历史记录」会删（题和错题本保留）；整站清空不做（要删题用「清理题库」按科目/考点）。
 import { cleanBank, describeClean, organize, startClassify, unorganized, MaxErr } from "./max";
 import { wrongSql } from "./live";
 import { today } from "./review";
@@ -68,16 +68,21 @@ export async function runAction(env: Env, ctx: ExecutionContext, name: string, a
 			if (dry) return { msg: `删除题库里 ${n} 道题（${describeClean(arg)}）？例如：${sample.join("；") || "无"}。做题记录会保留，删了不能恢复。`, n };
 			return { msg: `已删除 ${n} 道题`, n, done: true };
 		}
-		case "设考试": {
-			const [en, ed] = arg.split("|").map((x) => x.trim());
-			if (!en || !/^\d{4}-\d{2}-\d{2}$/.test(ed ?? "")) throw new MaxErr("考试要写「名称|日期」，日期如 2026-10-20");
-			if (dry) return { msg: `设考试：${en} ${ed}（首页倒计时）`, n: 1 };
-			const row = await db.prepare("SELECT v FROM meta WHERE k = 'exams'").first<{ v: string }>();
-			let list: { name: string; date: string }[] = [];
-			try { list = JSON.parse(row?.v ?? "[]"); } catch {}
-			list = [...list.filter((e) => e.name !== en), { name: en, date: ed }];
-			await db.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('exams', ?)").bind(JSON.stringify(list)).run();
-			return { msg: `已设考试：${en} ${ed}`, n: 1, done: true };
+		case "清空历史记录": { // 练习册模式：作答记录、总结、Max 缓存清掉；题库、错题本（含错因整理）、待批改的作答都留着
+			const n = await count(db, "SELECT COUNT(*) n FROM attempts WHERE status <> '待批改'");
+			const extra = (await count(db, "SELECT COUNT(*) n FROM summaries")) + (await count(db, "SELECT COUNT(*) n FROM max_cache"));
+			if (!n && !extra) return { msg: "历史记录已经是空的", n: 0, empty: true };
+			if (dry) return { msg: `清空历史记录：作答记录 ${n} 条，另有总结和 Max 的缓存回答。题库和错题本里的题都保留（做错过的题仍在错题本，等你重做），连续练习天数会归零。清空后不能恢复。`, n: n + extra };
+			// 做错过的题先固定成「原错题」：作答删了，错题本里的题还在
+			await db.prepare("UPDATE questions SET source = '原错题' WHERE status = 'active' AND id IN (SELECT question_id FROM attempts WHERE is_correct = 0)").run();
+			const keys = (await db.prepare("SELECT photo_key FROM attempts WHERE status <> '待批改' AND photo_key IS NOT NULL").all<{ photo_key: string }>()).results.flatMap((r) => r.photo_key.split(",")).filter(Boolean);
+			for (let i = 0; i < keys.length; i += 50) {
+				const part = keys.slice(i, i + 50);
+				await db.prepare(`DELETE FROM photos WHERE key IN (${part.map(() => "?").join(",")})`).bind(...part).run();
+			}
+			await sql("DELETE FROM marks", "DELETE FROM attempts WHERE status <> '待批改'", "DELETE FROM summaries", "DELETE FROM max_cache",
+				"DELETE FROM jobs WHERE status IN ('done', 'failed')", "DELETE FROM meta WHERE k IN ('wsum', 'folder_sum', 'folder_seen', 'br:dirty')");
+			return { msg: `已清空历史记录（${n} 条作答）`, n, done: true };
 		}
 		case "放回复习": { // 题号列表 → 今天重新做（回到第 1 档）
 			const { ids, names } = await byNo(db, arg);

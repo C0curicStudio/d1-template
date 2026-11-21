@@ -222,14 +222,12 @@ const CLAUDE_ASK = {
 	grade: "用练习本：批改待批改的作答，写评语",
 	inbox: "用练习本：处理收件箱的照片，整理成错题并出同类题",
 	marked: "用练习本：解析我标记的题",
-	exams: "用练习本：把我临近的考试（名称和日期）写到首页倒计时",
 };
 // iPhone/iPad：同页打开链接，系统会直接拉起 Claude App（通用链接）；App 不一定读得到预填内容，所以同时把指令复制好，进去粘贴即可
 const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
-// 和 Claude 的交互也先过 Max：Max 能先做的（看初评、设考试）放在前面，省得每次都去叫 Claude
+// 和 Claude 的交互也先过 Max：Max 能先做的（看初评）放在前面，省得每次都去叫 Claude
 const MAX_FIRST = {
 	[CLAUDE_ASK.grade]: ["{max}先看 Max 初评", { pending: true }, "等 Claude 批改的题，你的初评怎么样？哪些拿不准？"],
-	[CLAUDE_ASK.exams]: ["{max}让 Max 设考试", undefined, "帮我设考试倒计时（问我考试名称和日期）"],
 };
 const claudeLink = (text, label) =>
 	el("a", { className: "btn", href: "https://claude.ai/new?q=" + encodeURIComponent(text), textContent: label, style: "text-decoration:none",

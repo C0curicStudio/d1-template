@@ -10,6 +10,7 @@ import { loginPage } from "./login";
 import { chatQuota, edge, flag, guard } from "./security";
 import { addDays, clearFolder, dailyCleanup, masterQuestion, removeQuestion, today, updateQueue } from "./review";
 import { brief, byMax, chat, classifyState, gen, hint, see, why, MaxErr, maxDaily, organize, startClassify, status, unorganized, used, wrongSummary } from "./max";
+import { aiCfg, clearCfg, publicCfg, saveCfg } from "./aicfg";
 import { live, ready, wrongSql } from "./live";
 import { check as kimiCheck, run as kimiRun } from "./kimi";
 import { findNote } from "./notion";
@@ -177,7 +178,7 @@ app.get("/api/home", async (c) => {
 	return c.json(await homeData(c.env.DB));
 });
 async function homeData(db: D1Database) {
-	const [qs, pending, wrong, subjects, ungraded, marked, recent, exams, days_, right7] = await Promise.all([
+	const [qs, pending, wrong, subjects, ungraded, marked, recent, days_, right7] = await Promise.all([
 		todayQuestions(db, "q.id"),
 		db.prepare("SELECT COUNT(*) n FROM uploads WHERE status = '待处理'").first<{ n: number }>(),
 		db.prepare(`SELECT COUNT(*) n FROM review_queue r JOIN questions q ON q.id = r.question_id WHERE q.status = 'active' AND ${live()}`).first<{ n: number }>(),
@@ -194,7 +195,6 @@ async function homeData(db: D1Database) {
 		db.prepare("SELECT COUNT(*) n FROM attempts a JOIN questions q ON q.id = a.question_id WHERE a.status = '待批改' AND a.grader IS NULL").first<{ n: number }>(), // Max 在批的不算；题已不存在的不算
 		db.prepare("SELECT COUNT(*) n FROM marks WHERE attempt_id IS NOT NULL AND created_at > datetime('now','-1 day')").first<{ n: number }>(),
 		db.prepare(`SELECT id, subject, no, type, tag, board, stem, options, created_at FROM questions q WHERE q.status = 'active' AND ${live()} ORDER BY id DESC LIMIT 8`).all<any>(),
-		db.prepare("SELECT v FROM meta WHERE k = 'exams'").first<{ v: string }>(),
 		// 打卡：按北京时间统计每天有没有做题，近 7 天做对多少
 		db.prepare("SELECT DISTINCT date(created_at, '+8 hours') d FROM attempts ORDER BY d DESC LIMIT 400").all<{ d: string }>(),
 		db.prepare("SELECT COUNT(*) n FROM attempts WHERE is_correct = 1 AND created_at > datetime('now', '-7 days')").first<{ n: number }>(),
@@ -209,7 +209,6 @@ async function homeData(db: D1Database) {
 		queue_count: wrong?.n ?? 0,
 		subjects: subjects.results,
 		marked: marked?.n ?? 0,
-		exams: parse<{ name: string; date: string }[]>(exams?.v ?? null, []).filter((e) => e.date >= today()).sort((a, b) => a.date.localeCompare(b.date)),
 		today: today(),
 		streak,
 		done_today: days.has(today()),
@@ -443,6 +442,14 @@ app.get("/api/max/prep", async (c) => {
 	const done = !!aid && r.status === "已判";
 	return c.json({ topic: r.topic, category: r.category, tag: pick({ ...r, opts: !!r.options }).tag, done, ans: done ? parse<string[]>(r.answer, []) : undefined, exp: done ? r.explanation || "" : undefined });
 });
+// 模型接入：密钥在网页设置里填，存进 D1（见 aicfg.ts）；读取只返回尾号，保存前先试通
+app.get("/api/ai/config", async (c) => c.json(publicCfg(await aiCfg(c.env))));
+app.post("/api/ai/config", async (c) => {
+	const b = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+	const r = await saveCfg(c.env, { key: String(b.key ?? ""), base: String(b.base ?? ""), model: String(b.model ?? ""), reasoner: String(b.reasoner ?? ""), name: String(b.name ?? ""), prefer: b.prefer !== false });
+	return r.ok ? c.json(publicCfg(await aiCfg(c.env))) : c.json({ error: r.error }, 400);
+});
+app.delete("/api/ai/config", async (c) => (await clearCfg(c.env), c.json(publicCfg(await aiCfg(c.env)))));
 app.get("/api/max/status", async (c) => c.json(await status(c.env, c.req.query("fresh") === "1")));
 app.post("/api/max/kimi", async (c) => c.json(await kimiRun(c.env)));
 app.get("/api/max/wrongsum", async (c) => c.json(await wrongSummary(c.env, c.req.query("force") === "1", c.executionCtx)));

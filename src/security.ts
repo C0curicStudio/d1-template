@@ -29,7 +29,7 @@ export async function guard(c: Context<{ Bindings: Env }>, next: Next) {
 	}
 	if (p.startsWith("/api/")) {
 		if (await over(c.env.RL_API, "api:" + ip(c))) { flag(c, "api"); return c.json({ error: "请求太频繁，稍等一下" }, 429, { "Retry-After": "60" }); }
-		if (m === "POST" && p.startsWith("/api/max/") && (await over(c.env.RL_AI, "ai:" + ip(c)))) { flag(c, "ai"); return c.json({ error: "问得太快啦，歇一分钟再问 Max" }, 429, { "Retry-After": "60" }); }
+		if (m !== "GET" && (p.startsWith("/api/max/") || p === "/api/ai/config") && (await over(c.env.RL_AI, "ai:" + ip(c)))) { flag(c, "ai"); return c.json({ error: "问得太快啦，歇一分钟再问 Max" }, 429, { "Retry-After": "60" }); }
 	}
 	await next();
 	try { c.res.headers.get("x"); c.res.headers.set("X-Content-Type-Options", "nosniff"); } catch { c.res = new Response(c.res.body, c.res); } // 有的响应头是只读的：复制一份再改
