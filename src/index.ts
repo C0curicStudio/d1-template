@@ -11,6 +11,7 @@ import { chatQuota, edge, flag, guard } from "./security";
 import { addDays, clearFolder, dailyCleanup, masterQuestion, removeQuestion, today, updateQueue } from "./review";
 import { brief, byMax, chat, classifyState, gen, hint, see, why, MaxErr, maxDaily, organize, startClassify, status, unorganized, used, wrongSummary } from "./max";
 import { aiCfg, clearCfg, publicCfg, saveCfg } from "./aicfg";
+import { cachedPlan, lesson, masteryRows, plan as studyPlan } from "./study";
 import { live, ready, wrongSql } from "./live";
 import { check as kimiCheck, run as kimiRun } from "./kimi";
 import { findNote } from "./notion";
@@ -450,6 +451,23 @@ app.post("/api/ai/config", async (c) => {
 	return r.ok ? c.json(publicCfg(await aiCfg(c.env))) : c.json({ error: r.error }, 400);
 });
 app.delete("/api/ai/config", async (c) => (await clearCfg(c.env), c.json(publicCfg(await aiCfg(c.env)))));
+// AI 学习台：掌握度地图 + 今日计划（打开页面不花额度）、AI 排计划、知识点微课（流式）
+app.get("/api/study", async (c) => {
+	const rows = await masteryRows(c.env.DB), cfg = await aiCfg(c.env);
+	const n = rows.reduce((t, r) => t + r.n, 0), r = rows.reduce((t, x) => t + x.r, 0);
+	return c.json({ rows, n, right: r, plan: await cachedPlan(c.env.DB, rows), ai: cfg ? { on: true, name: cfg.name } : { on: false } });
+});
+app.post("/api/study/plan", async (c) => {
+	const b = await c.req.json<{ force?: boolean }>().catch(() => ({}) as { force?: boolean });
+	return c.json(await studyPlan(c.env, !!b.force, () => chatQuota(c.env.DB)));
+});
+app.post("/api/study/lesson", async (c) => {
+	const b = await c.req.json<{ topic?: string; again?: boolean }>().catch(() => ({}) as { topic?: string; again?: boolean });
+	try {
+		const r = await lesson(c.env, String(b.topic ?? "").slice(0, 50), !!b.again, () => chatQuota(c.env.DB));
+		return new Response(r.cached ?? r.stream!, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-max-engine": r.cached ? "cache" : "" } });
+	} catch (e) { return c.json({ error: e instanceof MaxErr ? e.message : "讲解失败：" + (e as Error).message }, e instanceof MaxErr ? 429 : 500); }
+});
 app.get("/api/max/status", async (c) => c.json(await status(c.env, c.req.query("fresh") === "1")));
 app.post("/api/max/kimi", async (c) => c.json(await kimiRun(c.env)));
 app.get("/api/max/wrongsum", async (c) => c.json(await wrongSummary(c.env, c.req.query("force") === "1", c.executionCtx)));
@@ -508,7 +526,7 @@ app.post("/api/max/chat", async (c) => {
 	const tmp = t ? { stem: t.stem.slice(0, 500), options: (Array.isArray(t.options) ? t.options : []).slice(0, 4).map((o: unknown) => String(o).slice(0, 120)), answer: String(t.answer ?? "").slice(0, 120),
 		mine: String(t.mine ?? "").slice(0, 120), exp: String(t.exp ?? "").slice(0, 150), done: !!t.done } : undefined;
 	try {
-		const r = await chat(c.env, messages, { pending: !!ctx.pending, q: Number(ctx.q) || undefined, a: Number(ctx.a) || undefined, explain: Number(ctx.explain) || undefined, cmp: !!ctx.cmp, marked: !!ctx.marked, web: !!ctx.web, deep: !!ctx.deep, tmp, page: pg,
+		const r = await chat(c.env, messages, { pending: !!ctx.pending, q: Number(ctx.q) || undefined, a: Number(ctx.a) || undefined, explain: Number(ctx.explain) || undefined, cmp: !!ctx.cmp, marked: !!ctx.marked, study: !!ctx.study, topic: String(ctx.topic ?? "").slice(0, 40), web: !!ctx.web, deep: !!ctx.deep, tmp, page: pg,
 			len: ["s", "m", "l"].includes(ctx.len) ? ctx.len : "m", pref: ["auto", "ds", "cf"].includes(ctx.pref) ? ctx.pref : "auto" }, () => chatQuota(c.env.DB));
 		return new Response(r.cached ?? r.stream!, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-max-engine": r.cached ? "cache" : r.engine ?? "", ...(r.web != null ? { "x-max-web": String(r.web) } : {}) } });
 	} catch (e) {

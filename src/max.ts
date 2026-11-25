@@ -12,6 +12,7 @@ import { webSearch } from "./search";
 import { figText } from "./fig";
 import { enqueueNow } from "./jobs";
 import { aiCfg, chatUrl, isDeepSeek } from "./aicfg";
+import { studyDigest } from "./study";
 import { info as kimiInfo, note as kimiNote, patch as kimiPatch } from "./kimi";
 
 const CF = ["@cf/zai-org/glm-4.7-flash", "@cf/qwen/qwen3.8-27b"]; // 默认先用便宜的 glm（输出价只有 qwen 的 1/8）；批改（strong）先用 qwen
@@ -436,10 +437,11 @@ const WEB_NOTE = "有“联网搜索结果”时优先依据结果回答，结�
 
 // len：回答长短（s 简洁省额度 / m 标准 / l 详细）；pref：优先引擎（auto 自动 / ds 尽量 DeepSeek / cf 只用 Cloudflare）
 type Tmp = { stem: string; options?: string[]; answer?: string; mine?: string; exp?: string; done?: boolean }; // Max 现场出的临时题（不在题库）
-type Ctx = { pending?: boolean; q?: number; a?: number; explain?: number; cmp?: boolean; marked?: boolean; web?: boolean; deep?: boolean; tmp?: Tmp; page?: { path?: string; title?: string; text?: string }; len?: "s" | "m" | "l"; pref?: "auto" | "ds" | "cf" };
+type Ctx = { study?: boolean; topic?: string; pending?: boolean; q?: number; a?: number; explain?: number; cmp?: boolean; marked?: boolean; web?: boolean; deep?: boolean; tmp?: Tmp; page?: { path?: string; title?: string; text?: string }; len?: "s" | "m" | "l"; pref?: "auto" | "ds" | "cf" };
 const LEN = { s: ["回答≤80字，只说要点。", 350], m: ["", 600], l: ["可以讲详细些（≤400字）。", 1000] } as const;
 
 async function context(db: D1Database, ctx: Ctx): Promise<{ text: string; key?: string; hard?: boolean }> {
+	if (ctx.study) return { text: await studyDigest(db, ctx.topic), hard: true }; // AI 学习台：带上学生的掌握度数据，答疑针对这个学生
 	if (ctx.pending) { // 等 Claude 批改的题：带上 Max 的初评，学生先在网站里看个大概，不用每次都去叫 Claude
 		const { results } = await db.prepare(`SELECT a.id aid, a.answer_text, a.max_score, a.max_comment, a.max_sure, q.subject, q.stem, q.answer FROM attempts a JOIN questions q ON q.id = a.question_id
 			WHERE a.status = '待批改' AND a.grader IS NULL ORDER BY a.id DESC LIMIT 8`).all<any>();
@@ -504,7 +506,7 @@ export async function chat(env: Env, messages: Msg[], ctx: Ctx = {}, allow?: () 
 	const oneShot = (ctx.explain || ctx.marked) && messages.length <= 1; // 一键讲解/解析：同一题同一结果只花一次额度
 	// 页面内容只在问到「这页/总结/分析…」时才带；题库概况只在问题和题目有关、又没带题目/页面时才查（查它要扫全库，不需要就不查）
 	const page = !oneShot && ctx.page?.text && PAGEQ.test(q) ? `学生当前页面（${String(ctx.page.title || ctx.page.path || "").slice(0, 30)}）的内容：\n${String(ctx.page.text).slice(0, 1200)}` : "";
-	const needBank = !(ctx.q || ctx.a || ctx.explain || ctx.marked || ctx.tmp) && !page && BANK_RE.test(q);
+	const needBank = !(ctx.study || ctx.q || ctx.a || ctx.explain || ctx.marked || ctx.tmp) && !page && BANK_RE.test(q);
 	const [c, bank] = await Promise.all([context(db, ctx), needBank ? bankIndex(db) : ""]); // 并行查
 	if (oneShot && c.key && !fresh) {
 		const hit = await cacheGet(db, c.key, 24 * 14);

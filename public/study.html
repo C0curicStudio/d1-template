@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Max Note：初三错题练习与复习">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta name="apple-mobile-web-app-title" content="MAX NOTE">
+<meta name="application-name" content="MAX NOTE">
+<title>MAX NOTE · AI 学习台</title>
+<script>(function(n,d){var p;try{p=localStorage.perf2}catch(e){}if(p==="lite"||(!p&&((n.deviceMemory||8)<4||(n.hardwareConcurrency||8)<4))||matchMedia("(prefers-reduced-transparency: reduce)").matches)d.classList.add("lite");var h=new Date().getHours();if(h>=21||h<7)d.classList.add("night")})(navigator,document.documentElement)</script>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/style.css">
+<meta name="theme-color" content="#f4efe6">
+<link rel="stylesheet" href="/katex/katex.min.css">
+</head><body><main class="study">
+<h1 class="hand-h1"><span class="hw bt">AI 学习台<svg class="squig" viewBox="0 0 120 10" preserveAspectRatio="none" aria-hidden="true"><path d="M2 6C18 2 32 9 52 5s38-4 66 1"/></svg></span></h1>
+<p class="mute" id="sub">读取中…</p>
+<div class="card maxcard" id="plan"></div>
+<div class="card" id="lesson" hidden></div>
+<h2>掌握度地图</h2>
+<div id="map"></div>
+<div class="card maxcard" id="chat">
+  <h2>问 AI 助教</h2>
+  <p class="mute mnote" id="chatnote">它能看到你的掌握度和错因，回答针对你，不是泛泛而谈。</p>
+  <div id="chips" class="chips"></div>
+  <div id="log" class="slog"></div>
+  <textarea id="q" rows="2" placeholder="哪里不懂就问：一道题、一个概念、一个错因…（Enter 发送，Shift+Enter 换行）"></textarea>
+  <div class="row" style="margin-top:8px">
+    <button type="button" class="chip" id="tdeep" title="用你接入的思考模型，想得更深更慢">深度思考</button>
+    <button type="button" class="chip" id="tweb" title="先搜网页再回答">联网搜索</button>
+    <button type="button" class="btn small" id="send" style="margin-left:auto">发送</button>
+  </div>
+</div>
+</main>
+<script defer src="/katex/katex.min.js"></script>
+<script defer src="/katex/auto-render.min.js"></script>
+<script defer src="/katex/mhchem.min.js"></script>
+<script src="/common.js"></script>
+<script src="/max.js"></script>
+<script src="/study.js"></script>
+</body></html>
