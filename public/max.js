@@ -358,7 +358,7 @@ const Max = (() => {
 		if (final) for (const a of div.querySelectorAll("a[data-note]")) // 去 Notion 找同考点笔记，找到才显示
 			api("/api/notion?subject=" + encodeURIComponent(a.dataset.note.includes("/") ? a.dataset.note.split("/")[0] : "") + "&topic=" + encodeURIComponent(a.dataset.note.split("/").pop())).then((r) => { if (r?.note) { a.href = r.note.url; a.textContent = "Notion 笔记：" + r.note.title; a.hidden = false; } }).catch(() => {});
 	}
-	const scroll = () => { ui.log.scrollTop = ui.log.scrollHeight; };
+	const scroll = () => { if (ui) ui.log.scrollTop = ui.log.scrollHeight; };
 	function bubble(role, text) {
 		const d = el("div", { className: "mb " + role });
 		paint(d, text, true);
@@ -611,6 +611,8 @@ const Max = (() => {
 		logo, // 首页标题的小太阳用同一个标志（和思考时一样会动）
 		setCtx(c) { ctx = base = c || {}; prefetch(ctx); if (ui?.island.classList.contains("open")) quick(); },
 		open,
+		render: paint, // 学习台等页面里把回答排版（加粗、公式、练题按钮）
+		act, // [[做:…]] 按钮
 		tip,
 		busy: setBusy, // Max 在后台干活（出题、整理）时让悬浮球也转起来
 	};
