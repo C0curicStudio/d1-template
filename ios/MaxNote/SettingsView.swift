@@ -17,6 +17,16 @@ struct SettingsView: View {
     @State private var confirmClear = false
     @State private var clearMsg = ""
     @State private var showOffline = false
+    @AppStorage("theme") private var theme = "system"
+    @AppStorage("haptics") private var haptics = true
+    @AppStorage("ballShow") private var ballShow = true
+    @AppStorage("ballFade") private var ballFade = true
+    @AppStorage("autoCache") private var autoCache = true
+    @AppStorage("wifiOnly") private var wifiOnly = false
+    @AppStorage("maxDeep") private var maxDeep = false
+    @AppStorage("maxWeb") private var maxWeb = false
+    @StateObject private var pre = Prefetcher.shared
+    @State private var cacheInfo = (count: 0, bytes: 0)
     @AppStorage("maxLen") private var maxLen = "m"
     @AppStorage("maxPref") private var maxPref = "auto"
     @State private var status: J = [:]
@@ -33,6 +43,14 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("外观与操作") {
+                    Picker("主题", selection: $theme) { Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark") }
+                    Toggle("触感反馈", isOn: $haptics)
+                    Toggle("显示 Max 悬浮球", isOn: $ballShow)
+                    Toggle("悬浮球闲置时变淡", isOn: $ballFade).disabled(!ballShow)
+                    Button("悬浮球回到默认位置") { UserDefaults.standard.set(true, forKey: "ballRight"); UserDefaults.standard.set(0.74, forKey: "ballY2"); Haptic.tap() }.disabled(!ballShow)
+                }
+
                 Section {
                     Text(cfg.bool("on") ? "已接入：\(cfg.str("name")) · \(cfg.str("model")) · 密钥 …\(cfg.str("tail"))" : "还没接入：填一个模型密钥，批改、讲题、出题、分析都会用它（不填也能用 Cloudflare 免费额度）。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -57,21 +75,36 @@ struct SettingsView: View {
                         HStack { Text((ds.str("name").isEmpty ? "我的模型" : ds.str("name")) + " 今日用量"); Spacer(); Text(ds.bool("on") ? "\(ds.int("pct"))%" : "未接入").foregroundStyle(Color.mute) }
                         if let ch = status.dict("chats") { HStack { Text("今天和 Max 聊了"); Spacer(); Text("\(ch.int("used")) / \(ch.int("cap")) 次").foregroundStyle(Color.mute) } }
                     }
+                    Toggle("默认开启深度思考", isOn: $maxDeep)
+                    Toggle("默认开启联网搜索", isOn: $maxWeb)
                     Button("Max 自检（出错时让 AI 看日志）") { Task { await runKimi() } }
                     if let k = kimi { Text(k).font(.footnote).foregroundStyle(Color.mute) }
                 } header: { Text("Max 助手") }
+
+                Section {
+                    Toggle("自动缓存题目（今日题、各科题、题库、错题本）", isOn: $autoCache)
+                    Toggle("仅在 Wi-Fi 下自动缓存", isOn: $wifiOnly).disabled(!autoCache)
+                    HStack { Text("已缓存"); Spacer(); Text("\(cacheInfo.count) 项 · \(ByteCountFormatter.string(fromByteCount: Int64(cacheInfo.bytes), countStyle: .file))").foregroundStyle(Color.mute) }
+                    HStack { Text("上次缓存"); Spacer(); if let t = pre.lastRun { Text(t, style: .relative).foregroundStyle(Color.mute) } else { Text("还没有").foregroundStyle(Color.mute) } }
+                    HStack { Text("网络"); Spacer(); Text(pre.online ? (pre.onWifi ? "Wi-Fi / 有线" : "蜂窝网络") : "离线").foregroundStyle(Color.mute) }
+                    Button(pre.running ? (pre.progress.isEmpty ? "缓存中…" : pre.progress) : "立即缓存题目") { Task { await pre.run(force: true); cacheInfo = LocalStore.shared.cacheStats() } }.disabled(pre.running || !pre.online)
+                    if pre.pending > 0 {
+                        HStack { Text("没网时交的卷，等待补交"); Spacer(); Text("\(pre.pending) 份").foregroundStyle(Color.brand) }
+                        Button("现在补交") { Task { await pre.flush() } }.disabled(!pre.online)
+                    }
+                    Button("清空缓存", role: .destructive) { LocalStore.shared.clearCache(); cacheInfo = LocalStore.shared.cacheStats() }
+                } header: { Text("缓存与离线") } footer: { Text("缓存下来的题没网也能做；没网时交的卷先存在手机里，联网后自动补交。带画板或照片的答案需要联网才能交。") }
 
                 Section("数据") {
                     HStack { Text("本地题库副本"); Spacer(); Text("\(sync.count) 题").foregroundStyle(.secondary) }
                     if let d = sync.lastSync { HStack { Text("上次同步"); Spacer(); Text(d, style: .relative).foregroundStyle(.secondary) } }
                     Button("立即同步题库") { sync.refresh(force: true) }
                     Button("离线题库") { showOffline = true }
-                    Button("清空缓存") { LocalStore.shared.clearCache(); note = "缓存已清空" }
                     Button("清空历史记录…", role: .destructive) { Task { await clearHistory(dry: true) } }
                 }
 
-                Section("网页版") {
-                    Button("打开完整网页版（拍照上传、Max 悬浮球等）") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { router.web = WebSpec(path: "/", title: "MAX NOTE 网页版") } }
+                Section("网站") {
+                    Link("在浏览器里打开网站", destination: Site.url)
                 }
 
                 Section("服务器") {
@@ -79,11 +112,17 @@ struct SettingsView: View {
                     Button("保存地址") { if Site.save(site) { note = "已保存，重新打开 App 生效" } }
                     Button("退出登录", role: .destructive) { dismiss(); API.shared.logout() }
                 }
+
+                Section("关于") {
+                    HStack { Text("MAX NOTE"); Spacer(); Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))").foregroundStyle(Color.mute) }
+                    HStack { Text("服务器"); Spacer(); Text(Site.url.host ?? "").foregroundStyle(Color.mute) }
+                    Text("题目、作答、错题都存在你自己的服务器（Cloudflare D1）；App 只在手机上缓存，不上传到别处。").font(.footnote).foregroundStyle(Color.mute)
+                }
             }
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
-            .task { await loadCfg() }
+            .task { cacheInfo = LocalStore.shared.cacheStats(); await loadCfg() }
             .alert("清空历史记录", isPresented: $confirmClear) {
                 Button("取消", role: .cancel) {}
                 Button("清空", role: .destructive) { Task { await clearHistory(dry: false) } }

@@ -2,11 +2,13 @@ import SwiftUI
 import UIKit
 
 enum Haptic {
-    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-    static func soft() { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
-    static func select() { UISelectionFeedbackGenerator().selectionChanged() }
-    static func ok() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func bad() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
+    /// 设置里可以关掉触感反馈
+    static var on: Bool { UserDefaults.standard.object(forKey: "haptics") as? Bool ?? true }
+    static func tap() { if on { UIImpactFeedbackGenerator(style: .light).impactOccurred() } }
+    static func soft() { if on { UIImpactFeedbackGenerator(style: .soft).impactOccurred() } }
+    static func select() { if on { UISelectionFeedbackGenerator().selectionChanged() } }
+    static func ok() { if on { UINotificationFeedbackGenerator().notificationOccurred(.success) } }
+    static func bad() { if on { UINotificationFeedbackGenerator().notificationOccurred(.error) } }
 }
 
 struct Chip: View {
