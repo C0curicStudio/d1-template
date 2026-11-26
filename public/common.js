@@ -1,12 +1,36 @@
 // 公共小工具
+// 离线缓存：GET 成功的接口结果存在本机（最近 40 个、单个 ≤200KB）；没网时先用上次的结果，页面还能看、能搜。Max/AI 相关不存
+const OFF_SKIP = /^\/api\/(max|ai|notion)\//;
+function offStore(url, d) {
+	try {
+		if (OFF_SKIP.test(url)) return;
+		const s = JSON.stringify(d);
+		if (s.length > 200000) return;
+		localStorage.setItem("o:" + url, s);
+		const idx = JSON.parse(localStorage.getItem("o:idx") || "[]").filter((u) => u !== url);
+		idx.push(url);
+		while (idx.length > 40) localStorage.removeItem("o:" + idx.shift());
+		localStorage.setItem("o:idx", JSON.stringify(idx));
+	} catch {}
+}
+function offLoad(url) { try { const s = localStorage.getItem("o:" + url); return s ? JSON.parse(s) : null; } catch { return null; } }
+let offlineShown = false;
 async function api(url, opts) {
 	const write = opts?.method && opts.method !== "GET";
 	if (write) dropCache(); // 改了数据（交题、删题、标记…）：本页缓存作废
-	const r = await fetch(url, opts);
+	let r;
+	try { r = await fetch(url, opts); }
+	catch {
+		if (!write) { const c = offLoad(url); if (c != null) { document.documentElement.classList.add("offline"); if (!offlineShown) { offlineShown = true; try { toast("没有网络：显示的是上次的内容"); } catch {} } return c; } }
+		throw new Error("没有网络，联网后再试");
+	}
+	document.documentElement.classList.remove("offline");
 	if (write) dropCache(); // 请求期间别处可能又缓存了旧数据：完成后再清一次
 	if (r.status === 401) { location.href = "/login"; throw new Error("未登录"); }
 	if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
-	return r.json();
+	const d = await r.json();
+	if (!write) offStore(url, d);
+	return d;
 }
 const $ = (s) => document.querySelector(s);
 // 接口结果在本标签页缓存 ttl 毫秒：刷新页面、来回切换都不重复请求（一改数据就清掉）

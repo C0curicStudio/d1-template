@@ -5,7 +5,7 @@
 	const opt = { cols: 1, size: 2, ans: "end", lines: 4, name: true };
 	const sel = new Set((new URLSearchParams(location.search).get("ids") || "").split(",").map(Number).filter(Boolean));
 	let src = "bank", subject = "", list = [], seq = 0, timer = 0;
-	const SRC = [["bank", "题库"], ["wrong", "错题本"], ["mastered", "错题文件夹"]];
+	const SRC = [["bank", "题库"], ["wrong", "错题本"], ["mastered", "错题文件夹"], ["all", "全集"]];
 	const seg = (id, key, items) => {
 		const box = $("#" + id);
 		const draw = () => box.replaceChildren(...items.map(([v, t]) => el("button", { type: "button", className: opt[key] === v ? "on" : "", textContent: t, onclick: () => { opt[key] = v; draw(); schedule(); } })));
@@ -23,7 +23,7 @@
 	}
 	async function loadList() {
 		drawSrc();
-		const my = ++seq, url = src === "bank" ? "/api/bank" : "/api/wrong?tab=" + (src === "mastered" ? "mastered" : "active");
+		const my = ++seq, url = src === "bank" ? "/api/bank" : src === "all" ? "/api/library?limit=100" : "/api/wrong?tab=" + (src === "mastered" ? "mastered" : "active");
 		const d = await api(url).catch((e) => (toast(e.message), { items: [] }));
 		if (my !== seq) return;
 		list = d.items;

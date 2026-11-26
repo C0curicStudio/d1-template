@@ -12,6 +12,7 @@ final class Web: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate,
     @Published var showSettings = false
     private var obs: NSKeyValueObservation?
     private let refresh = UIRefreshControl()
+    private var triedCache = false // 没网时先用 App 里缓存的页面（见 fail）
 
     // 注入：给网页加 native 标记（样式可据此微调）
     private static let boot = "document.documentElement.classList.add('native');window.MAXNOTE_NATIVE=true;"
@@ -45,10 +46,11 @@ final class Web: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate,
 
     func load() {
         failed = nil
+        triedCache = false
         view.load(URLRequest(url: Site.url))
     }
 
-    @objc private func pull() { view.reload() }
+    @objc private func pull() { triedCache = false; view.reload() }
 
     // MARK: 导航
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -69,13 +71,27 @@ final class Web: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate,
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         refresh.endRefreshing()
+        if triedCache {
+            // 用缓存打开的页面：脚本也在缓存里才算可用，否则回到「无法连接」（那里有离线题库）
+            webView.evaluateJavaScript("typeof api === 'function' && typeof el === 'function'") { [weak self] ok, _ in
+                if (ok as? Bool) != true { self?.failed = "没有网络，页面还没有缓存" } else { self?.failed = nil }
+            }
+            return
+        }
         failed = nil
+        LibrarySync.shared.refresh() // 登录后在后台同步题库到本地
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { fail(error) }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { fail(error) }
     private func fail(_ error: Error) {
         refresh.endRefreshing()
         if (error as NSError).code == NSURLErrorCancelled { return }
+        if !triedCache {
+            // 没网 / 服务器连不上：先试着用 App 缓存的页面（网页里的数据也有一份本机缓存），不行再显示错误
+            triedCache = true
+            view.load(URLRequest(url: Site.url, cachePolicy: .returnCacheDataDontLoad))
+            return
+        }
         failed = error.localizedDescription
     }
 
