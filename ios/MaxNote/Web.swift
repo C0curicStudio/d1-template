@@ -232,7 +232,7 @@ struct WebSheet: View {
                 WebViewHost(web: web).ignoresSafeArea(edges: .bottom)
                 if web.progress < 1 && web.failed == nil { VStack { ProgressView(value: web.progress).padding(.horizontal, 24); Spacer() } }
                 if let m = web.failed {
-                    VStack(spacing: 12) { EmptyHint(icon: "wifi.exclamationmark", text: m); Button("重试") { web.load() }.buttonStyle(.borderedProminent) }
+                    VStack(spacing: 12) { EmptyHint(icon: "wifi.exclamationmark", text: m); Button("重试") { web.load() }.buttonStyle(BrandButtonStyle(filled: true)) }
                 }
             }
             .navigationTitle(spec.title)

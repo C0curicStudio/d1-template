@@ -15,39 +15,58 @@ struct StudyView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if feed.offline { Section { OfflineBadge() } }
-                Section {
+            ScrollView {
+                VStack(spacing: 14) {
+                    if feed.offline { OfflineBadge().padding(.horizontal, 4) }
                     let n = d.int("n"), right = d.int("right")
                     HStack(spacing: 10) {
                         StatTile(value: n, label: "近 60 天练过")
                         StatTile(value: n > 0 ? Int((Double(right) / Double(n) * 100).rounded()) : 0, label: "正确率 %")
                         StatTile(value: d.arr("rows").filter { $0.str("level") == "薄弱" }.count, label: "薄弱考点")
                     }
-                    .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
-                }
 
-                let steps = curPlan.arr("steps")
-                Section {
-                    if steps.isEmpty { Text("还没有学习数据，先去做几道题").foregroundStyle(.secondary) }
-                    ForEach(Array(steps.enumerated()), id: \.offset) { i, s in PlanRow(index: i + 1, step: s) }
-                    Button { replan() } label: {
-                        Label(replanning ? "AI 排计划中…" : "让 AI 重新排计划", systemImage: "arrow.triangle.2.circlepath")
+                    let steps = curPlan.arr("steps")
+                    VStack(spacing: 4) {
+                        HStack {
+                            Text("今日学习计划").font(.title3.weight(.semibold)).foregroundStyle(Color.ink)
+                            Chip(text: (curPlan["ai"] as? Bool) == true ? "AI 排的" : "按薄弱度排的", tint: Color.mute)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 4).padding(.top, 10)
+                        VStack(spacing: 0) {
+                            if steps.isEmpty { Text("还没有学习数据，先去做几道题").foregroundStyle(Color.mute).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading) }
+                            ForEach(Array(steps.enumerated()), id: \.offset) { i, s in
+                                PlanRow(index: i + 1, step: s)
+                                if i < steps.count - 1 { Divider().overlay(Color.hairline) }
+                            }
+                            Divider().overlay(Color.hairline)
+                            Button { replan() } label: {
+                                Label(replanning ? "AI 排计划中…" : "让 AI 重新排计划", systemImage: "arrow.triangle.2.circlepath").font(.subheadline.weight(.semibold)).foregroundStyle(Color.brand)
+                                    .padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(PressRowStyle()).disabled(replanning)
+                        }
+                        .card(14)
+                        if !curPlan.str("say").isEmpty { Text(curPlan.str("say")).font(.footnote).foregroundStyle(Color.mute).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6) }
                     }
-                    .disabled(replanning)
-                } header: {
-                    HStack { Text("今日学习计划"); Chip(text: (curPlan["ai"] as? Bool) == true ? "AI 排的" : "按薄弱度排的", tint: .secondary).textCase(nil) }
-                } footer: { Text(curPlan.str("say")) }
 
-                ForEach(subjects, id: \.self) { s in
-                    Section(s) {
-                        ForEach(Array(rows.filter { $0.str("subject") == s }.enumerated()), id: \.offset) { _, r in MasteryRow(r: r) }
+                    ForEach(subjects, id: \.self) { s in
+                        VStack(spacing: 4) {
+                            SectionTitle(s)
+                            VStack(spacing: 0) {
+                                let rs = rows.filter { $0.str("subject") == s }
+                                ForEach(Array(rs.enumerated()), id: \.offset) { i, r in
+                                    MasteryRow(r: r)
+                                    if i < rs.count - 1 { Divider().overlay(Color.hairline) }
+                                }
+                            }
+                            .card(14)
+                        }
                     }
+                    if rows.isEmpty && !feed.loading { EmptyHint(icon: "chart.bar", text: "题库还是空的：拍照上传错题或让 Claude 出题后，这里会出现你的掌握度地图。") }
                 }
-                if rows.isEmpty && !feed.loading { EmptyHint(icon: "chart.bar", text: "题库还是空的：拍照上传错题或让 Claude 出题后，这里会出现你的掌握度地图。").listRowBackground(Color.clear) }
+                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 170)
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
             .background(WarmBackground())
             .navigationTitle("学习台")
             .searchable(text: $query, prompt: "搜索考点")
@@ -61,16 +80,16 @@ struct StudyView: View {
     private var askBar: some View {
         Button { Haptic.tap(); router.ask(study: true) } label: {
             HStack(spacing: 10) {
-                Image(systemName: "sparkles").foregroundStyle(Color.accentColor)
-                Text("问 AI 助教：它能看到你的掌握度和错因").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                MaxLogo(size: 22)
+                Text("问 AI 助教：它能看到你的掌握度和错因").font(.subheadline).foregroundStyle(Color.mute).lineLimit(1)
                 Spacer()
-                Image(systemName: "arrow.up.circle.fill").font(.title2).foregroundStyle(Color.accentColor)
+                Image(systemName: "arrow.up.circle.fill").font(.title2).foregroundStyle(Color.brand)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
             .glassCapsule(interactive: true)
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 16).padding(.bottom, 6)
+        .padding(.horizontal, 16).padding(.bottom, 62)
     }
 
     private func replan() {
@@ -91,19 +110,18 @@ struct MasteryRow: View {
         let level = r.str("level"), topic = r.str("subject") + "/" + r.str("topic")
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(r.str("topic")).font(.body.weight(.medium))
+                Text(r.str("topic")).font(.body.weight(.medium)).foregroundStyle(Color.ink)
                 Chip(text: level, tint: levelColor(level))
                 Spacer()
-                Text(r.int("n") > 0 ? "\(r.int("n")) 题 · \(r.int("mastery"))%" : "\(r.int("total")) 题未练").font(.caption).foregroundStyle(.secondary)
+                Text(r.int("n") > 0 ? "\(r.int("n")) 题 · \(r.int("mastery"))%" : "\(r.int("total")) 题未练").font(.caption).foregroundStyle(Color.mute)
             }
             ProgressView(value: Double(r.has("mastery") ? r.int("mastery") : 0), total: 100).tint(levelColor(level))
             HStack(spacing: 10) {
-                Button("学") { Haptic.tap(); router.lesson = LessonSpec(topic: topic) }
-                Button("练 5 题") { Haptic.tap(); router.practice(topic: topic) }
+                Button("学") { Haptic.tap(); router.lesson = LessonSpec(topic: topic) }.buttonStyle(BrandButtonStyle())
+                Button("练 5 题") { Haptic.tap(); router.practice(topic: topic) }.buttonStyle(BrandButtonStyle())
             }
-            .buttonStyle(.bordered).controlSize(.small)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 10)
     }
 }
 
@@ -126,8 +144,8 @@ struct LessonView: View {
                     Text(md(body)).font(.body).lineSpacing(5).textSelection(.enabled)
                     if !busy {
                         HStack {
-                            Button("没懂，换种讲法") { Task { await load(again: true) } }.buttonStyle(.bordered)
-                            Button("去练 5 题") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { router.practice(topic: spec.topic) } }.buttonStyle(.borderedProminent)
+                            Button("没懂，换种讲法") { Task { await load(again: true) } }.buttonStyle(BrandButtonStyle())
+                            Button("去练 5 题") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { router.practice(topic: spec.topic) } }.buttonStyle(BrandButtonStyle(filled: true))
                         }
                         .controlSize(.regular)
                         ForEach(acts) { a in if a.kind != .practice { Text(a.title).font(.caption).foregroundStyle(.secondary) } }
@@ -201,7 +219,7 @@ struct ChatView: View {
                 Alert(title: Text(p.action.arg), message: Text(p.message), primaryButton: .default(Text("确定")) { Task { await run(p.action, dry: false) } }, secondaryButton: .cancel())
             }
             .task {
-                if let p = spec.prompt, msgs.isEmpty { send(p) }
+                if let p = spec.prompt, msgs.isEmpty { send(p) } else { try? await Task.sleep(nanoseconds: 450_000_000); focus = true } // 从悬浮球打开：自动弹出键盘
             }
         }
         .presentationDetents([.large])
@@ -221,7 +239,7 @@ struct ChatView: View {
     @ViewBuilder private func bubble(_ m: ChatMsg) -> some View {
         if m.role == "user" {
             Text(m.text).padding(.horizontal, 14).padding(.vertical, 10)
-                .foregroundStyle(.white).background(Color.accentColor, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .foregroundStyle(.white).background(Color.brand, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .frame(maxWidth: .infinity, alignment: .trailing).padding(.leading, 50)
         } else {
             let (body, acts) = splitActions(m.text)
@@ -231,7 +249,7 @@ struct ChatView: View {
                 if !(busy && m.id == msgs.last?.id) {
                     ForEach(acts) { a in
                         Button { tap(a) } label: { Label(a.title, systemImage: a.kind == .practice ? "play.fill" : a.kind == .doit ? "checkmark.circle" : "arrow.right").font(.footnote.weight(.semibold)) }
-                            .buttonStyle(.bordered).controlSize(.small)
+                            .buttonStyle(BrandButtonStyle()).controlSize(.small)
                     }
                 }
             }
@@ -245,11 +263,13 @@ struct ChatView: View {
             TextField("问 Max…", text: $input, axis: .vertical)
                 .lineLimit(1...5)
                 .focused($focus)
+                .accessibilityIdentifier("chatInput")
                 .padding(.horizontal, 14).padding(.vertical, 10)
             Button { send(input) } label: {
-                Image(systemName: busy ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 32)).foregroundStyle(input.isEmpty && !busy ? Color.secondary : Color.accentColor)
+                Image(systemName: busy ? "stop.circle.fill" : "arrow.up.circle.fill").font(.system(size: 32)).foregroundStyle(input.isEmpty && !busy ? Color.secondary : Color.brand)
             }
             .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty && !busy)
+            .accessibilityIdentifier("chatSend")
             .padding(.trailing, 6).padding(.bottom, 4)
         }
         .glassCard(cornerRadius: 26)

@@ -14,7 +14,7 @@ struct OfflineLibraryView: View {
                 NavigationLink(value: r) {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
-                            Text(r.subject).font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+                            Text(r.subject).font(.caption.weight(.semibold)).foregroundStyle(Color.brand)
                             if !r.topic.isEmpty { Text(r.topic).font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             if r.wrongs > 0 { Text("错 \(r.wrongs)").font(.caption).foregroundStyle(.red) }
@@ -58,7 +58,7 @@ struct QDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text(row.subject).font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor)
+                    Text(row.subject).font(.subheadline.weight(.semibold)).foregroundStyle(Color.brand)
                     if !row.topic.isEmpty { Text("· " + row.topic).font(.subheadline).foregroundStyle(.secondary) }
                     if !row.tag.isEmpty { Text(row.tag).font(.caption).padding(.horizontal, 8).padding(.vertical, 2).glassCapsule(interactive: false) }
                 }
@@ -85,11 +85,53 @@ struct QDetail: View {
     }
 }
 
-/// 公式在原生里不渲染：去掉 $ 和常见 LaTeX 记号，保证可读
-func plain(_ s: String) -> String {
-    var t = s.replacingOccurrences(of: "$", with: "")
-    for (a, b) in [("\\ce{", "{"), ("\\times", "×"), ("\\cdot", "·"), ("\\Omega", "Ω"), ("\\circ", "°"), ("\\leq", "≤"), ("\\geq", "≥"), ("\\pi", "π"), ("\\sqrt", "√"), ("\\frac", ""), ("\\left", ""), ("\\right", "")] {
-        t = t.replacingOccurrences(of: a, with: b)
+/// 公式在原生界面里转成 Unicode 可读形式：上下标、分数、根号、化学式、常用符号（不依赖网页的 KaTeX）
+private let SUP: [Character: Character] = ["0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾", "n": "ⁿ", "i": "ⁱ"]
+private let SUB: [Character: Character] = ["0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉", "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎", "a": "ₐ", "e": "ₑ", "o": "ₒ", "x": "ₓ", "n": "ₙ", "m": "ₘ"]
+
+private func rx(_ s: String, _ pattern: String, _ f: ([String]) -> String) -> String {
+    guard let re = try? NSRegularExpression(pattern: pattern) else { return s }
+    let ns = s as NSString
+    var out = "", last = 0
+    for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
+        out += ns.substring(with: NSRange(location: last, length: m.range.location - last))
+        out += f((0..<m.numberOfRanges).map { i in m.range(at: i).location == NSNotFound ? "" : ns.substring(with: m.range(at: i)) })
+        last = m.range.location + m.range.length
     }
-    return t
+    return out + ns.substring(from: last)
+}
+
+private func mapChars(_ s: String, _ table: [Character: Character], _ fallback: String) -> String {
+    let t = s.filter { $0 != " " }
+    if t.allSatisfy({ table[$0] != nil }) { return String(t.map { table[$0]! }) }
+    return fallback + (t.count > 1 ? "(" + t + ")" : t)
+}
+
+func plain(_ input: String) -> String {
+    var t = input.replacingOccurrences(of: "$", with: "")
+    // 化学式 \ce{H2O} \ce{2KMnO4 ->[\Delta] K2MnO4}
+    t = rx(t, "\\\\ce\\{([^{}]*)\\}") { g in
+        var c = g[1].replacingOccurrences(of: "<=>", with: " ⇌ ").replacingOccurrences(of: "->", with: " → ").replacingOccurrences(of: "\\Delta", with: "△")
+        c = rx(c, "\\[([^\\]]*)\\]") { $0[1] }
+        c = rx(c, "([A-Za-z\\)])(\\d+)") { $0[1] + mapChars($0[2], SUB, "_") }
+        return c
+    }
+    t = rx(t, "\\\\[dt]?frac\\{([^{}]*)\\}\\{([^{}]*)\\}") { g in
+        let a = g[1].count > 1 ? "(" + g[1] + ")" : g[1], b = g[2].count > 1 ? "(" + g[2] + ")" : g[2]
+        return a + "/" + b
+    }
+    t = rx(t, "\\\\sqrt\\[(\\d)\\]\\{([^{}]*)\\}") { (g: [String]) -> String in mapChars(g[1], SUP, "^") + "√(" + g[2] + ")" }
+    t = rx(t, "\\\\sqrt\\{([^{}]*)\\}") { "√(" + $0[1] + ")" }
+    t = t.replacingOccurrences(of: "\\sqrt", with: "√")
+    let sym: [(String, String)] = [("\\times", "×"), ("\\cdot", "·"), ("\\div", "÷"), ("\\pm", "±"), ("\\neq", "≠"), ("\\ne", "≠"), ("\\leq", "≤"), ("\\le", "≤"), ("\\geq", "≥"), ("\\ge", "≥"),
+        ("\\approx", "≈"), ("\\infty", "∞"), ("\\circ", "°"), ("\\angle", "∠"), ("\\triangle", "△"), ("\\perp", "⊥"), ("\\parallel", "∥"), ("\\because", "∵"), ("\\therefore", "∴"),
+        ("\\rightarrow", "→"), ("\\to", "→"), ("\\Rightarrow", "⇒"), ("\\leftrightarrow", "↔"), ("\\Omega", "Ω"), ("\\omega", "ω"), ("\\Delta", "Δ"), ("\\delta", "δ"), ("\\alpha", "α"), ("\\beta", "β"),
+        ("\\gamma", "γ"), ("\\theta", "θ"), ("\\lambda", "λ"), ("\\mu", "μ"), ("\\pi", "π"), ("\\rho", "ρ"), ("\\sigma", "σ"), ("\\varphi", "φ"), ("\\phi", "φ"), ("\\eta", "η"),
+        ("\\left", ""), ("\\right", ""), ("\\,", " "), ("\;", " "), ("\\!", ""), ("\\quad", "  "), ("\\text", ""), ("\\mathrm", ""), ("\\%", "%"), ("\\{", "{"), ("\\}", "}")]
+    for (a, b) in sym { t = t.replacingOccurrences(of: a, with: b) }
+    t = rx(t, "\\^\\{([^{}]*)\\}") { mapChars($0[1], SUP, "^") }
+    t = rx(t, "\\^([0-9A-Za-z+\\-])") { mapChars($0[1], SUP, "^") }
+    t = rx(t, "_\\{([^{}]*)\\}") { mapChars($0[1], SUB, "_") }
+    t = rx(t, "_([0-9A-Za-z])") { mapChars($0[1], SUB, "_") }
+    return t.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: "")
 }

@@ -16,8 +16,8 @@ struct QuizView: View {
     @State private var attemptIds: [Int] = []
     @State private var results: [J] = []
     @State private var polling = false
-    @State private var chat: ChatSpec?
-    @State private var web: WebSpec?
+    @State private var sheet: SheetKind?
+    @EnvironmentObject private var router: Router
     @State private var confirmExit = false
 
     enum Phase { case loading, doing, submitting, result, empty, failed }
@@ -51,15 +51,14 @@ struct QuizView: View {
             .confirmationDialog("退出后这次作答不会保存", isPresented: $confirmExit, titleVisibility: .visible) { Button("退出", role: .destructive) { dismiss() } }
         }
         .interactiveDismissDisabled(phase == .doing)
-        .sheet(item: $chat) { ChatView(spec: $0) }
-        .sheet(item: $web) { WebSheet(spec: $0) }
+        .sheet(item: $sheet) { SheetHost(kind: $0).environmentObject(router) }
         .task { await load() }
     }
 
     private var failedView: some View {
         VStack(spacing: 14) {
             EmptyHint(icon: "wifi.exclamationmark", text: error ?? "取题失败")
-            Button("重试") { Task { await load() } }.buttonStyle(.borderedProminent)
+            Button("重试") { Task { await load() } }.buttonStyle(BrandButtonStyle(filled: true))
         }
     }
 
@@ -67,7 +66,7 @@ struct QuizView: View {
     private var doing: some View {
         let q = qs[idx]
         return VStack(spacing: 0) {
-            ProgressView(value: Double(idx + 1), total: Double(max(1, qs.count))).tint(.accentColor).padding(.horizontal, 20).padding(.top, 6)
+            ProgressView(value: Double(idx + 1), total: Double(max(1, qs.count))).tint(Color.brand).padding(.horizontal, 20).padding(.top, 6)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 6) {
@@ -111,15 +110,15 @@ struct QuizView: View {
                     } label: {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: on ? (type == "multi" ? "checkmark.square.fill" : "largecircle.fill.circle") : (type == "multi" ? "square" : "circle"))
-                                .foregroundStyle(on ? Color.accentColor : .secondary).font(.title3)
+                                .foregroundStyle(on ? Color.brand : .secondary).font(.title3)
                             Text(plain(opt)).foregroundStyle(.primary).multilineTextAlignment(.leading)
                             Spacer(minLength: 0)
                         }
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(on ? Color.accentColor.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(on ? Color.brand.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .glassCard(cornerRadius: 16)
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Color.accentColor : .clear, lineWidth: 1.5))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Color.brand : .clear, lineWidth: 1.5))
                         .scaleEffect(on ? 1.01 : 1)
                     }
                     .buttonStyle(.plain)
@@ -131,7 +130,7 @@ struct QuizView: View {
     private func webOnly(_ q: J) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("这道题要用画板、手写或看题图，用网页版作答", systemImage: "pencil.and.scribble").font(.subheadline).foregroundStyle(.secondary)
-            Button("在网页版作答") { web = WebSpec(path: "/quiz?ids=\(q.int("id"))", title: "作答") }.buttonStyle(GlassButtonStyle(prominent: true))
+            Button("在网页版作答") { sheet = .web(WebSpec(path: "/quiz?ids=\(q.int("id"))", title: "作答")) }.buttonStyle(GlassButtonStyle(prominent: true))
         }
         .padding(16).glassCard(cornerRadius: 18)
     }
@@ -147,7 +146,7 @@ struct QuizView: View {
                 Button { Task { await hint(q) } } label: { Label(hinting ? "思考中…" : (hs.isEmpty ? "卡住了？给个提示" : "再给点提示"), systemImage: "lightbulb") }
                     .font(.footnote).disabled(hinting)
             } else {
-                Button { chat = ChatSpec(title: "问 Max", study: false, ctx: ["q": q.int("id")], prompt: "这题我还是不会，再给我讲讲思路（先别说答案）") } label: { Label("还是不会，问 Max", systemImage: "sparkles") }.font(.footnote)
+                Button { sheet = .chat(ChatSpec(title: "问 Max", study: false, ctx: ["q": q.int("id")], prompt: "这题我还是不会，再给我讲讲思路（先别说答案）")) } label: { Label("还是不会，问 Max", systemImage: "sparkles") }.font(.footnote)
             }
         }
     }
@@ -179,13 +178,13 @@ struct QuizView: View {
                 ZStack {
                     Circle().stroke(Color.secondary.opacity(0.2), lineWidth: 10)
                     Circle().trim(from: 0, to: results.isEmpty ? 0 : CGFloat(right) / CGFloat(results.count))
-                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 10, lineCap: .round)).rotationEffect(.degrees(-90))
+                        .stroke(Color.brand, style: StrokeStyle(lineWidth: 10, lineCap: .round)).rotationEffect(.degrees(-90))
                         .animation(.spring(response: 0.8, dampingFraction: 0.8), value: right)
                     VStack { Text("\(right) / \(results.count)").font(.system(size: 30, weight: .bold, design: .rounded)); Text(wait > 0 ? "\(wait) 题批改中" : "答对").font(.caption).foregroundStyle(.secondary) }
                 }
                 .frame(width: 130, height: 130).padding(.top, 10)
                 if wait > 0 && polling { ProgressView("Max 批改中…").font(.footnote) }
-                ForEach(Array(results.enumerated()), id: \.offset) { _, r in ResultCard(r: r, chat: $chat) }
+                ForEach(Array(results.enumerated()), id: \.offset) { _, r in ResultCard(r: r, sheet: $sheet) }
             }
             .padding(16)
         }
@@ -254,7 +253,7 @@ struct QuizView: View {
 
 struct ResultCard: View {
     let r: J
-    @Binding var chat: ChatSpec?
+    @Binding var sheet: SheetKind?
     @State private var expl: String?
 
     var body: some View {
@@ -274,8 +273,8 @@ struct ResultCard: View {
             if !r.str("error_reason").isEmpty { Chip(text: "错因：" + r.str("error_reason"), tint: .red) }
             if let e = expl { Text("解析：" + plain(e)).font(.footnote) }
             HStack {
-                Button("问 Max") { chat = ChatSpec(title: "问 Max", study: false, ctx: ["explain": r.int("id")], prompt: "讲讲这道题") }.buttonStyle(.bordered)
-                if expl == nil { Button("解析") { Task { await loadExpl() } }.buttonStyle(.bordered) }
+                Button("问 Max") { sheet = .chat(ChatSpec(title: "问 Max", study: false, ctx: ["explain": r.int("id")], prompt: "讲讲这道题")) }.buttonStyle(BrandButtonStyle())
+                if expl == nil { Button("解析") { Task { await loadExpl() } }.buttonStyle(BrandButtonStyle()) }
             }
             .controlSize(.small)
         }

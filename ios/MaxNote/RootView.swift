@@ -40,11 +40,10 @@ struct MainTabs: View {
 
     var body: some View {
         tabs
-            .fullScreenCover(item: $router.quiz) { QuizView(spec: $0) }
-            .sheet(item: $router.chat) { ChatView(spec: $0).environmentObject(router) }
-            .sheet(item: $router.lesson) { LessonView(spec: $0).environmentObject(router) }
-            .sheet(item: $router.web) { WebSheet(spec: $0) }
-            .sheet(item: $router.printSpec) { PrintFlow(preselect: $0.ids) }
+            .tint(Color.brand)
+            .overlay { MaxBall() }
+            .fullScreenCover(item: $router.quiz) { QuizView(spec: $0).environmentObject(router) }
+            .sheet(item: $router.sheet) { SheetHost(kind: $0).environmentObject(router) }
     }
 
     @ViewBuilder

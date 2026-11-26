@@ -33,7 +33,7 @@ struct PrinterSheet: View {
                             Button { bt.connect(d.id) } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: d.likelyPrinter ? "printer.fill" : "dot.radiowaves.left.and.right")
-                                        .foregroundStyle(d.likelyPrinter ? Color.accentColor : .secondary)
+                                        .foregroundStyle(d.likelyPrinter ? Color.brand : .secondary)
                                         .frame(width: 24)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(d.name).font(.body).foregroundStyle(.primary)
@@ -69,7 +69,7 @@ struct PrinterSheet: View {
                     .glassCard(cornerRadius: 26)
 
                     if let p = bt.progress {
-                        ProgressView(value: p).tint(.accentColor)
+                        ProgressView(value: p).tint(Color.brand)
                     }
 
                     VStack(spacing: 10) {

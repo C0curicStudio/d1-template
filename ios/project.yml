@@ -44,3 +44,28 @@ targets:
         NSCameraUsageDescription: 拍照上传错题、拍照作答需要使用相机。
         NSPhotoLibraryUsageDescription: 从相册选择错题或作答照片。
         NSBluetoothAlwaysUsageDescription: 搜索并连接蓝牙打印机，把排好版的题目打印出来。
+  MaxNoteUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: MaxNote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxnote.uitests
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: MaxNote
+schemes:
+  MaxNote:
+    build:
+      targets:
+        MaxNote: all
+        MaxNoteUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - MaxNoteUITests
+    archive:
+      config: Release

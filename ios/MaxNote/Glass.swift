@@ -48,7 +48,7 @@ struct GlassButtonStyle: ButtonStyle {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
-            .background(prominent ? Color.accentColor.opacity(0.92) : Color.clear, in: Capsule())
+            .background(prominent ? Color.brand.opacity(0.92) : Color.clear, in: Capsule())
             .glassCapsule(interactive: !prominent)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.65), value: configuration.isPressed)

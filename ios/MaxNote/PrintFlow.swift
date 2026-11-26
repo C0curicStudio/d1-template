@@ -156,7 +156,7 @@ struct PrintFlow: View {
                             let id = q.int("id")
                             Button { Haptic.select(); if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } } label: {
                                 HStack(alignment: .top) {
-                                    Image(systemName: selection.contains(id) ? "checkmark.circle.fill" : "circle").foregroundStyle(selection.contains(id) ? Color.accentColor : .secondary)
+                                    Image(systemName: selection.contains(id) ? "checkmark.circle.fill" : "circle").foregroundStyle(selection.contains(id) ? Color.brand : .secondary)
                                     VStack(alignment: .leading) {
                                         Text(q.str("subject") + (q.str("topic").isEmpty ? "" : " › " + q.str("topic"))).font(.caption).foregroundStyle(.secondary)
                                         Text(plain(q.str("stem").replacingOccurrences(of: "^[^·]*·", with: "", options: .regularExpression))).font(.subheadline).foregroundStyle(.primary).lineLimit(2)

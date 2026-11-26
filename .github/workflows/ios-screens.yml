@@ -1,0 +1,54 @@
+name: iOS Screenshots
+
+# 在云端 iPhone 模拟器里用演示数据把每个页面点一遍并截图（深色 / 浅色），传到 Releases 供检查界面。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: 生成工程
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: 选模拟器
+        id: sim
+        run: |
+          UDID=$(python3 - <<'PY'
+          import json, subprocess
+          d = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))["devices"]
+          best = None
+          for rt, devs in d.items():
+              if "iOS" not in rt: continue
+              for x in devs:
+                  if "iPhone" in x["name"] and "Pro" in x["name"] and "Max" not in x["name"]:
+                      best = x["udid"]
+          print(best or "")
+          PY
+          )
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | head -30
+      - name: 跑截图测试
+        continue-on-error: true
+        run: |
+          rm -rf /tmp/maxshots
+          cd ios
+          xcodebuild test -project MaxNote.xcodeproj -scheme MaxNote \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -only-testing:MaxNoteUITests CODE_SIGNING_ALLOWED=NO 2>&1 | tail -40
+      - name: 列出截图
+        if: always()
+        run: ls -la /tmp/maxshots | head -80
+      - name: 发布截图
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: shots-${{ github.run_number }}
+          name: 界面截图 ${{ github.run_number }}
+          prerelease: true
+          files: /tmp/maxshots/*.png
