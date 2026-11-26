@@ -25,20 +25,23 @@ struct QuizView: View {
     @State private var scratches: [Int: PKDrawing] = [:] // 草稿纸：不交
     @State private var photos: [Int: [UIImage]] = [:]    // 拍照作答
     @State private var cover: Cover?
+    @State private var smart: [Int: SmartBoard] = [:]      // 画板作答（作图 / 函数 / 电路 / 光路 / 受力 / 证明）：交卷
+    @State private var calcScratch: [Int: CalcBoard] = [:] // 计算草稿板：不交
     @State private var fromCache = false
     @State private var queued = false
 
     enum Cover: Identifiable {
-        case sketch(SketchSpec), camera(Int)
-        var id: String { switch self { case .sketch(let s): return "s-\(s.id)"; case .camera(let i): return "c-\(i)" } }
+        case sketch(SketchSpec), camera(Int), smart(Int, Bool)
+        var id: String { switch self { case .sketch(let s): return "s-\(s.id)"; case .camera(let i): return "c-\(i)"; case .smart(let i, let sc): return "b-\(i)-\(sc)" } }
     }
 
     enum Phase { case loading, doing, submitting, result, empty, failed, drill }
 
     private func isNative(_ q: J) -> Bool { ["single", "multi", "fill", "short"].contains(q.str("type")) }
     private func hasBoard(_ i: Int) -> Bool { !(boards[i]?.bounds.isEmpty ?? true) }
+    private func hasSmart(_ i: Int) -> Bool { !(smart[i]?.answer.isEmpty ?? true) }
     private func answered(_ i: Int) -> Bool {
-        !(picks[i] ?? []).isEmpty || !(texts[i] ?? "").trimmingCharacters(in: .whitespaces).isEmpty || hasBoard(i) || !(photos[i] ?? []).isEmpty
+        !(picks[i] ?? []).isEmpty || !(texts[i] ?? "").trimmingCharacters(in: .whitespaces).isEmpty || hasBoard(i) || hasSmart(i) || !(photos[i] ?? []).isEmpty
     }
     private var anyAnswer: Bool { qs.indices.contains { answered($0) } }
 
@@ -84,6 +87,9 @@ struct QuizView: View {
                 SketchBoard(title: s.title, kind: s.kind, scratch: s.scratch, drawing: Binding(get: { (s.scratch ? scratches[s.idx] : boards[s.idx]) ?? PKDrawing() }, set: { if s.scratch { scratches[s.idx] = $0 } else { boards[s.idx] = $0 } }))
             case .camera(let i):
                 ImagePicker(camera: true) { photos[i, default: []].append($0) }.ignoresSafeArea()
+            case .smart(let i, let scratch):
+                if scratch, let b = calcScratch[i] { BoardScreen(board: .calc(b), scratch: true) }
+                else if let b = smart[i] { BoardScreen(board: b, scratch: false) }
             }
         }
         .task { await load() }
@@ -183,10 +189,23 @@ struct QuizView: View {
         let tag = q.str("tag"), kind = BoardKind.forTag(tag), drawn = drawnTags.contains(tag)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Button { cover = .sketch(SketchSpec(idx: idx, title: drawn ? "画板作答" : "手写答案", kind: kind, scratch: false)) } label: { Label(drawn ? "画板作答" : "手写答案", systemImage: "pencil.tip.crop.circle").lineLimit(1) }
-                    .buttonStyle(BrandButtonStyle(filled: drawn))
-                if !drawn { Button { cover = .sketch(SketchSpec(idx: idx, title: "草稿纸", kind: kind, scratch: true)) } label: { Label("草稿纸", systemImage: "square.and.pencil").lineLimit(1) }.buttonStyle(BrandButtonStyle()) }
+                if drawn {
+                    // 作图类：智能画板（吸附、自动算方程和交点 / 电路通电）就是答案
+                    Button {
+                        if smart[idx] == nil { smart[idx] = SmartBoard.make(tag: tag, subject: q.str("subject")) }
+                        cover = .smart(idx, false)
+                    } label: { Label(smart[idx] == nil ? "打开画板作答" : "继续画", systemImage: "scribble.variable").lineLimit(1) }.buttonStyle(BrandButtonStyle(filled: true))
+                } else {
+                    Button { cover = .sketch(SketchSpec(idx: idx, title: "手写答案", kind: kind, scratch: false)) } label: { Label("手写答案", systemImage: "pencil.tip.crop.circle").lineLimit(1) }.buttonStyle(BrandButtonStyle())
+                    Button {
+                        if calcScratch[idx] == nil { calcScratch[idx] = CalcBoard(subject: q.str("subject")) }
+                        cover = .smart(idx, true)
+                    } label: { Label("计算草稿板", systemImage: "function").lineLimit(1) }.buttonStyle(BrandButtonStyle())
+                }
                 Button { cover = .camera(idx) } label: { Label("拍照作答", systemImage: "camera").lineLimit(1) }.buttonStyle(BrandButtonStyle())
+            }
+            if drawn, let b = smart[idx], !b.answer.isEmpty {
+                Text(b.answer.describe()).font(.footnote).foregroundStyle(Color.mute).lineLimit(4).padding(10).frame(maxWidth: .infinity, alignment: .leading).background(Color.card, in: RoundedRectangle(cornerRadius: 10))
             }
             if let d = boards[idx], !d.bounds.isEmpty, let img = BoardRender.image(d, kind: kind, full: false) {
                 Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 180).background(Color.white).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -200,7 +219,7 @@ struct QuizView: View {
                     } }
                 }
             }
-            Text(drawn ? "画出来的 / 拍的就是答案，交卷后由 Claude 看图批改；也可以再打字补充。" : "打字写的由 Max 批改；用了手写答案或拍照，则由 Claude 看图批改。草稿纸不会交。").font(.caption).foregroundStyle(Color.mute)
+            Text(drawn ? "画板里画的会随答案交卷（文字描述 + 图），也可以再打字补充。" : "打字写的由 Max 批改；用了手写答案或拍照，则由 Claude 看图批改。草稿板不会交。").font(.caption).foregroundStyle(Color.mute)
         }
     }
 
@@ -333,8 +352,22 @@ struct QuizView: View {
                         keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", fields: ["kind": "board"], images: [sd]).str("key"))
                     }
                 }
+                // 智能画板：文字描述 + 整图（自己看）+ 画了笔迹时再附一张裁剪小图（给 Claude）
+                var work = ""
+                if let sb = smart[i], !sb.answer.isEmpty {
+                    needsPhotos = true
+                    let a = sb.answer
+                    work = a.tag + " " + a.describe()
+                    if let full = a.image(full: true), let fd = ImageUtil.jpeg(full, maxSide: 1280, maxBytes: 900_000) {
+                        keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", fields: ["kind": "view"], images: [fd]).str("key"))
+                    }
+                    if a.hasPen, let small = a.image(full: false), let sd = ImageUtil.jpeg(small, maxSide: 1024, maxBytes: 600_000) {
+                        keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", fields: ["kind": "board"], images: [sd]).str("key"))
+                    }
+                }
                 var it: [String: Any] = ["question_id": q.int("id"), "answer": ans, "photo_keys": keys, "time_spent_sec": Int(Date().timeIntervalSince(started[i] ?? Date()))]
-                if hand { it["hand"] = true; it["work"] = "[手写答案] 见附图" }
+                if hand { it["hand"] = true; work = (work.isEmpty ? "" : work + "\n") + "[手写答案] 见附图" }
+                if !work.isEmpty { it["work"] = work }
                 items.append(it)
             }
             let r = try await API.shared.obj("/api/submit", method: "POST", json: ["items": items])
