@@ -189,7 +189,7 @@ final class Web: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate,
 }
 
 /// 避免 WKUserContentController 强引用造成循环引用
-private final class WeakHandler: NSObject, WKScriptMessageHandler {
+final class WeakHandler: NSObject, WKScriptMessageHandler {
     weak var target: WKScriptMessageHandler?
     init(_ t: WKScriptMessageHandler) { target = t }
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) { target?.userContentController(c, didReceive: m) }

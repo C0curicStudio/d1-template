@@ -13,6 +13,7 @@ final class ChatModel: ObservableObject {
     @Published var deep = false
     @Published var web = false
     @Published var pending: PendingAlert?
+    @Published var attaching = false
     var spec = ChatSpec()
     private var task: Task<Void, Never>?
 
@@ -38,6 +39,20 @@ final class ChatModel: ObservableObject {
     }
 
     func clear() { task?.cancel(); busy = false; msgs.removeAll() }
+
+    /// 发图：先让看图模型把图转写成文字，再连同问题一起问 Max
+    func attach(_ img: UIImage) {
+        guard let d = ImageUtil.jpeg(img, maxSide: 1280, maxBytes: 1_800_000) else { return }
+        attaching = true
+        let q = input
+        Task {
+            do {
+                let r = try await API.shared.obj("/api/max/see", method: "POST", json: ["image": ImageUtil.dataURL(d), "q": String(q.prefix(200))])
+                send("【我发了一张图，内容转写如下】\n" + r.str("text") + "\n\n" + (q.isEmpty ? "帮我看看这张图，讲讲怎么做。" : q))
+            } catch { msgs.append(ChatMsg(role: "assistant", text: error.localizedDescription)) }
+            attaching = false
+        }
+    }
 
     /// Max 给的网站动作：先数一数、确认才做
     func run(_ a: MaxAction, dry: Bool) async {
@@ -110,9 +125,12 @@ struct ChatBody: View {
     }
 }
 
+enum PickSource: String, Identifiable { case camera, library; var id: String { rawValue } }
+
 struct ChatInputBar: View {
     @ObservedObject var model: ChatModel
     var focus: FocusState<Bool>.Binding
+    @State private var source: PickSource?
 
     private func tag(_ title: String, _ icon: String, _ on: Binding<Bool>) -> some View {
         Button { Haptic.select(); withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { on.wrappedValue.toggle() } } label: {
@@ -139,7 +157,16 @@ struct ChatInputBar: View {
     }
 
     private var field: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: 4) {
+            Menu {
+                Button { source = .camera } label: { Label("拍照", systemImage: "camera") }
+                Button { source = .library } label: { Label("从相册选", systemImage: "photo") }
+            } label: {
+                Group { if model.attaching { ProgressView() } else { Image(systemName: "photo.badge.plus").font(.system(size: 20)).foregroundStyle(Color.mute) } }
+                    .frame(width: 40, height: 40)
+            }
+            .padding(.leading, 4).padding(.bottom, 1)
+            .accessibilityLabel("发图片")
             TextField(model.deep && model.web ? "深度思考 + 联网搜索…" : model.deep ? "深度思考…" : model.web ? "联网搜索…" : "问 Max…", text: $model.input, axis: .vertical)
                 .lineLimit(1...5)
                 .focused(focus)
@@ -155,6 +182,7 @@ struct ChatInputBar: View {
         }
         .background(Color.card, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.6))
+        .fullScreenCover(item: $source) { s in ImagePicker(camera: s == .camera) { model.attach($0) }.ignoresSafeArea() }
     }
 }
 

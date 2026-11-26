@@ -19,13 +19,13 @@ struct QuizView: View {
     @State private var sheet: SheetKind?
     @EnvironmentObject private var router: Router
     @State private var confirmExit = false
+    @State private var marked = Set<Int>()
 
     enum Phase { case loading, doing, submitting, result, empty, failed }
 
     // 选择、填空、简答/计算/解答等文字作答的题都在原生界面做；只有要作图、或带题图的才用网页版
     private let drawTags: Set<String> = ["作图", "函数", "电路", "光路", "受力"]
     private func isNative(_ q: J) -> Bool {
-        if q.has("fig") && !(q["fig"] is NSNull) { return false }
         if q.str("type") == "short" && drawTags.contains(q.str("tag")) { return false }
         return ["single", "multi", "fill", "short"].contains(q.str("type"))
     }
@@ -50,6 +50,15 @@ struct QuizView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(phase == .result ? "完成" : "退出") {
                         if phase == .doing && picks.values.contains(where: { !$0.isEmpty }) || phase == .doing && texts.values.contains(where: { !$0.isEmpty }) { confirmExit = true } else { dismiss() }
+                    }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    if phase == .doing, qs.indices.contains(idx) {
+                        let qid = qs[idx].int("id")
+                        Button { Task { await toggleMark(qid) } } label: { Image(systemName: marked.contains(qid) ? "flag.fill" : "flag") }
+                            .accessibilityLabel("标记这道题")
                     }
                 }
             }
@@ -80,6 +89,7 @@ struct QuizView: View {
                         if !q.str("topic").isEmpty { Chip(text: q.str("topic"), tint: .secondary) }
                     }
                     Text(plain(q.str("stem"))).font(.title3).lineSpacing(5)
+                    if q.has("fig"), let fig = q["fig"], !(fig is NSNull) { FigView(fig: fig) }
                     if isNative(q) { answerArea(q) } else { webOnly(q) }
                     hintArea(q)
                 }
@@ -224,6 +234,14 @@ struct QuizView: View {
             idx = 0; started = [0: Date()]
             withAnimation { phase = .doing }
         } catch { self.error = error.localizedDescription; phase = .failed }
+    }
+
+    /// 标记：交卷后进「标记的题」，可以让 Max / Claude 解析
+    private func toggleMark(_ id: Int) async {
+        let on = !marked.contains(id)
+        if on { marked.insert(id) } else { marked.remove(id) }
+        Haptic.select()
+        _ = try? await API.shared.any("/api/mark", method: "POST", json: ["question_id": id, "on": on])
     }
 
     private func hint(_ q: J) async {

@@ -268,9 +268,7 @@ struct QuestionDetail: View {
                     }
                     Text(plain(q.str("stem").replacingOccurrences(of: "^[^·]*·", with: "", options: .regularExpression))).font(.title3).foregroundStyle(Color.ink)
                     ForEach(q.strs("options"), id: \.self) { Text(plain($0)).foregroundStyle(Color.ink) }
-                    if q.has("fig") && !(q["fig"] is NSNull) {
-                        Button { router.web = WebSpec(path: "/library", title: "题图") } label: { Label("这题带图，在网页版查看", systemImage: "photo") }.font(.footnote)
-                    }
+                    if q.has("fig"), let fig = q["fig"], !(fig is NSNull) { FigView(fig: fig) }
                 }
                 .padding(.vertical, 4)
                 .listRowBackground(Color.card)

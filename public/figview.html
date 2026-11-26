@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>题图</title>
+<style>html,body{margin:0;background:transparent}.w{padding:2px}figure{margin:0;display:flex;justify-content:center;background:#fff;border-radius:14px;padding:8px}canvas,svg,img{max-width:100%;height:auto}</style>
+</head><body><div class="w" id="w"></div>
+<script src="/common.js"></script>
+<script src="/board.js"></script>
+<script src="/circuit.js"></script>
+<script src="/fig.js"></script>
+<script>
+// 给 iOS App 画题图：#后面是 base64url 的题图 JSON，画完把高度告诉原生
+function post(m) { try { webkit.messageHandlers.maxnote.postMessage(m); } catch (e) {} }
+try {
+	const b = location.hash.slice(1).replace(/-/g, "+").replace(/_/g, "/");
+	const spec = JSON.parse(decodeURIComponent(escape(atob(b))));
+	const f = Fig.view(spec, "small");
+	if (f) { f.onclick = null; f.title = ""; f.style.cursor = "default"; document.getElementById("w").append(f); }
+} catch (e) {}
+const report = () => post({ type: "height", h: Math.ceil(document.getElementById("w").getBoundingClientRect().height) + 4 });
+setTimeout(report, 200); setTimeout(report, 700);
+</script></body></html>
