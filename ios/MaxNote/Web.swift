@@ -17,7 +17,11 @@ final class Web: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate,
     // 注入：给网页加 native 标记（样式可据此微调）
     private static let boot = "document.documentElement.classList.add('native');window.MAXNOTE_NATIVE=true;"
 
-    override init() {
+    private let path: String
+    private var startURL: URL { URL(string: Site.text + path) ?? Site.url }
+
+    init(path: String = "/") {
+        self.path = path
         let cfg = WKWebViewConfiguration()
         cfg.allowsInlineMediaPlayback = true
         cfg.applicationNameForUserAgent = "MaxNoteApp/1.0"
@@ -47,7 +51,7 @@ final class Web: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate,
     func load() {
         failed = nil
         triedCache = false
-        view.load(URLRequest(url: Site.url))
+        view.load(URLRequest(url: startURL))
     }
 
     @objc private func pull() { triedCache = false; view.reload() }
@@ -89,7 +93,7 @@ final class Web: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate,
         if !triedCache {
             // 没网 / 服务器连不上：先试着用 App 缓存的页面（网页里的数据也有一份本机缓存），不行再显示错误
             triedCache = true
-            view.load(URLRequest(url: Site.url, cachePolicy: .returnCacheDataDontLoad))
+            view.load(URLRequest(url: startURL, cachePolicy: .returnCacheDataDontLoad))
             return
         }
         failed = error.localizedDescription
@@ -207,5 +211,34 @@ enum Haptics {
                 gen.impactOccurred()
             }
         }
+    }
+}
+
+/// 网页版（带画板的题、拍照上传、Max 悬浮球等还没做成原生的功能，用网页版）
+struct WebSheet: View {
+    let spec: WebSpec
+    @StateObject private var web: Web
+    @Environment(\.dismiss) private var dismiss
+
+    init(spec: WebSpec) {
+        self.spec = spec
+        _web = StateObject(wrappedValue: Web(path: spec.path))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                WarmBackground()
+                WebViewHost(web: web).ignoresSafeArea(edges: .bottom)
+                if web.progress < 1 && web.failed == nil { VStack { ProgressView(value: web.progress).padding(.horizontal, 24); Spacer() } }
+                if let m = web.failed {
+                    VStack(spacing: 12) { EmptyHint(icon: "wifi.exclamationmark", text: m); Button("重试") { web.load() }.buttonStyle(.borderedProminent) }
+                }
+            }
+            .navigationTitle(spec.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+        }
+        .onDisappear { NotificationCenter.default.post(name: .bankChanged, object: nil) }
     }
 }
