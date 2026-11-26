@@ -11,7 +11,7 @@ enum Haptic {
 
 struct Chip: View {
     let text: String
-    var tint: Color = .accentColor
+    var tint: Color = Color.brand
     var body: some View {
         Text(text)
             .font(.caption.weight(.semibold))
@@ -26,7 +26,7 @@ func levelColor(_ level: String) -> Color {
     case "薄弱": return .red
     case "熟练": return .green
     case "未练": return .gray
-    default: return .accentColor
+    default: return Color.brand
     }
 }
 
@@ -37,12 +37,13 @@ struct StatTile: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
                 .font(.system(size: 34, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.ink)
                 .modifier(NumericTransition())
-            Text(label).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text(label).font(.caption).foregroundStyle(Color.mute).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .glassCard(cornerRadius: 20)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+        .card(14)
     }
 }
 
@@ -58,6 +59,13 @@ struct OfflineBadge: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// 行按下时淡一下（用在整行可点的按钮上，不带系统的蓝色/灰色背景）
+struct PressRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.contentShape(Rectangle()).opacity(configuration.isPressed ? 0.55 : 1)
     }
 }
 
@@ -120,14 +128,4 @@ func splitActions(_ text: String) -> (String, [MaxAction]) {
     grab("\\[\\[图[:：][\\s\\S]*?\\]\\]") { _ in nil } // 图在网页版里看
     out = out.replacingOccurrences(of: "\\[\\[[^\\]]*$", with: "", options: .regularExpression) // 流式输出时没写完的
     return (out.trimmingCharacters(in: .whitespacesAndNewlines), acts)
-}
-
-/// 页面背景：系统分组底色 + 一点点暖色渐变（和网站的米色呼应）
-struct WarmBackground: View {
-    @Environment(\.colorScheme) private var scheme
-    var body: some View {
-        LinearGradient(colors: [Color.accentColor.opacity(scheme == .dark ? 0.10 : 0.07), Color.clear], startPoint: .top, endPoint: .center)
-            .background(Color(.systemGroupedBackground))
-            .ignoresSafeArea()
-    }
 }

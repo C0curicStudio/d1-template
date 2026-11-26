@@ -53,6 +53,9 @@ final class API: ObservableObject {
 
     // MARK: 登录与 Cookie（原生和网页版共用一份登录）
     func bootstrap() async {
+        #if DEBUG
+        if Demo.on { authed = true; return }
+        #endif
         await pullCookiesFromWeb()
         do { _ = try await data("/api/home") ; authed = true } catch NetError.unauthorized { authed = false } catch { authed = LocalStore.shared.count() > 0 || HTTPCookieStorage.shared.cookies(for: Site.url)?.isEmpty == false }
     }
@@ -99,6 +102,9 @@ final class API: ObservableObject {
 
     // MARK: 请求
     func data(_ path: String, method: String = "GET", json: Any? = nil) async throws -> Data {
+        #if DEBUG
+        if Demo.on, let d = Demo.data(path, method) { authed = true; return d }
+        #endif
         var req = URLRequest(url: url(path))
         req.httpMethod = method
         if let j = json {
@@ -138,6 +144,15 @@ final class API: ObservableObject {
 
     /// 流式读取（Max 聊天、微课）：边收边回调完整文本
     func stream(_ path: String, json: Any, onText: @escaping (String) -> Void) async throws {
+        #if DEBUG
+        if Demo.on {
+            let full = path.contains("lesson") ? Demo.lessonText : Demo.chatText
+            var shown = ""
+            for ch in full { shown.append(ch); if shown.count % 6 == 0 { onText(shown); try await Task.sleep(nanoseconds: 20_000_000) } }
+            onText(full)
+            return
+        }
+        #endif
         var req = URLRequest(url: url(path))
         req.httpMethod = "POST"
         req.httpBody = try JSONSerialization.data(withJSONObject: json)

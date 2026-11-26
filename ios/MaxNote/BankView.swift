@@ -45,6 +45,7 @@ struct BankView: View {
     var body: some View {
         NavigationStack {
             List {
+                headerPicker.listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 if feed.offline { Section { OfflineBadge() } }
                 if mode == .wrong && tab == "active" { WrongSummary(sum: sum, organizing: $organizing, onChanged: { Task { await reload() } }) }
                 if groups.isEmpty && !feed.loading {
@@ -54,7 +55,7 @@ struct BankView: View {
                 ForEach(groups, id: \.key) { g in
                     Section {
                         ForEach(Array(g.rows.enumerated()), id: \.offset) { _, q in
-                            row(q)
+                            row(q).listRowBackground(Color.card)
                         }
                     } header: {
                         HStack {
@@ -71,10 +72,10 @@ struct BankView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(WarmBackground())
+            .tint(Color.brand)
             .navigationTitle(mode == .bank ? "题库" : "错题本")
             .navigationDestination(for: Int.self) { QuestionDetail(id: $0, onChanged: { Task { await reload() } }) }
             .searchable(text: $query, prompt: "搜索题干、考点")
-            .safeAreaInset(edge: .top) { header }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -95,14 +96,12 @@ struct BankView: View {
         }
     }
 
-    @ViewBuilder private var header: some View {
-        if mode == .bank || mode == .wrong {
+    private var headerPicker: some View {
+        Section {
             Picker("", selection: mode == .bank ? $scope : Binding(get: { tab == "active" ? 0 : 1 }, set: { tab = $0 == 0 ? "active" : "mastered"; Task { await switchTab() } })) {
                 if mode == .bank { Text("在用").tag(0); Text("全集（含已隐藏）").tag(1) } else { Text("复习中").tag(0); Text("错题文件夹").tag(1) }
             }
             .pickerStyle(.segmented)
-            .padding(.horizontal, 16).padding(.vertical, 8)
-            .background(.ultraThinMaterial)
         }
     }
 
@@ -120,7 +119,7 @@ struct BankView: View {
         let content = HStack(alignment: .top, spacing: 12) {
             if selecting {
                 Image(systemName: selection.contains(id) ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(selection.contains(id) ? Color.accentColor : .secondary)
+                    .foregroundStyle(selection.contains(id) ? Color.brand : .secondary)
                     .font(.title3)
                     .transition(.scale.combined(with: .opacity))
             }
@@ -142,7 +141,7 @@ struct BankView: View {
             }
         }
         .swipeActions(edge: .trailing) {
-            Button { router.practice(ids: [id]) } label: { Label("练", systemImage: "play.fill") }.tint(.accentColor)
+            Button { router.practice(ids: [id]) } label: { Label("练", systemImage: "play.fill") }.tint(Color.brand)
         }
     }
 
@@ -154,7 +153,7 @@ struct BankView: View {
     private func state(_ q: J) -> (String, Color) {
         if q.int("pending") > 0 { return ("待批改", .orange) }
         if mode == .wrong { return tab == "mastered" ? ("已改对", .green) : q.int("last") == 1 ? ("重做已对", .green) : ("待重做", .red) }
-        if scope == 1, !q.str("state").isEmpty { return (q.str("state"), q.str("state") == "在用" ? .accentColor : .secondary) }
+        if scope == 1, !q.str("state").isEmpty { return (q.str("state"), q.str("state") == "在用" ? Color.brand : .secondary) }
         if !q.str("due").isEmpty && q.str("due") > today { return ("\(Int(q.str("due").dropFirst(5).prefix(2)) ?? 0)月\(Int(q.str("due").suffix(2)) ?? 0)日做", .secondary) }
         return q.int("tries") == 0 ? ("未做", .blue) : q.int("last") == 1 ? ("做对", .green) : ("做错", .red)
     }
@@ -215,7 +214,7 @@ struct WrongSummary: View {
                         Spacer()
                         Button { router.ask("分析这页的错题：我最薄弱的 3 个考点、典型错因，接下来该怎么练？给我练习按钮", study: true) } label: { Label("学习诊断", systemImage: "sparkles") }
                     }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    .buttonStyle(BrandButtonStyle()).controlSize(.small)
                     if let n = note { Text(n).font(.caption).foregroundStyle(.secondary) }
                 }
                 .padding(.vertical, 4)

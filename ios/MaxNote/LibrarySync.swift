@@ -11,6 +11,9 @@ final class LibrarySync: ObservableObject {
     private var lastRun = Date.distantPast
 
     func refresh(force: Bool = false) {
+        #if DEBUG
+        if Demo.on { return }
+        #endif
         guard !running, force || Date().timeIntervalSince(lastRun) > 300 else { return }
         running = true
         WKWebsiteDataStore.default().httpCookieStore.getAllCookies { [weak self] cookies in
