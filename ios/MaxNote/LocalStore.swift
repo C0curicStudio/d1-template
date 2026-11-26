@@ -31,6 +31,7 @@ final class LocalStore {
         if sqlite3_open(path, &db) != SQLITE_OK { db = nil; return }
         run("CREATE TABLE IF NOT EXISTS questions(id INTEGER PRIMARY KEY, subject TEXT, category TEXT, topic TEXT, type TEXT, tag TEXT, stem TEXT, options TEXT, answer TEXT, explanation TEXT, state TEXT, wrongs INTEGER, created_at TEXT)")
         run("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
+        run("CREATE TABLE IF NOT EXISTS cache(k TEXT PRIMARY KEY, v BLOB, at REAL)")
     }
 
     @discardableResult
@@ -53,6 +54,34 @@ final class LocalStore {
         guard let v = v, JSONSerialization.isValidJSONObject(v), let d = try? JSONSerialization.data(withJSONObject: v), let s = String(data: d, encoding: .utf8) else { return "[]" }
         return s
     }
+
+    /// 接口结果缓存（GET）：没网时先给上次的
+    func cacheGet(_ k: String) -> Data? {
+        queue.sync {
+            guard let db = db else { return nil }
+            var st: OpaquePointer?
+            defer { sqlite3_finalize(st) }
+            guard sqlite3_prepare_v2(db, "SELECT v FROM cache WHERE k = ?", -1, &st, nil) == SQLITE_OK else { return nil }
+            sqlite3_bind_text(st, 1, k, -1, SQLITE_TRANSIENT)
+            guard sqlite3_step(st) == SQLITE_ROW, let p = sqlite3_column_blob(st, 0) else { return nil }
+            return Data(bytes: p, count: Int(sqlite3_column_bytes(st, 0)))
+        }
+    }
+
+    func cachePut(_ k: String, _ d: Data) {
+        queue.sync {
+            guard let db = db, d.count < 2_000_000 else { return }
+            var st: OpaquePointer?
+            defer { sqlite3_finalize(st) }
+            guard sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO cache(k, v, at) VALUES(?, ?, ?)", -1, &st, nil) == SQLITE_OK else { return }
+            sqlite3_bind_text(st, 1, k, -1, SQLITE_TRANSIENT)
+            _ = d.withUnsafeBytes { sqlite3_bind_blob(st, 2, $0.baseAddress, Int32(d.count), SQLITE_TRANSIENT) }
+            sqlite3_bind_double(st, 3, Date().timeIntervalSince1970)
+            sqlite3_step(st)
+        }
+    }
+
+    func clearCache() { queue.sync { _ = run("DELETE FROM cache") } }
 
     func meta(_ k: String) -> String? {
         queue.sync {

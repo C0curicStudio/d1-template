@@ -1,115 +1,157 @@
 import SwiftUI
 
 struct RootView: View {
-    @StateObject private var web = Web()
-    @StateObject private var bt = BTPrinter()
+    @StateObject private var api = API.shared
+    @StateObject private var router = Router()
     @StateObject private var sync = LibrarySync.shared
-    @State private var showOffline = false
     @Environment(\.scenePhase) private var phase
-    @Environment(\.colorScheme) private var scheme
+    @State private var booted = false
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // 底色和网站一致（暖米色 / 深色），下拉回弹和加载时不露白
-            (scheme == .dark ? Color(red: 0.122, green: 0.114, blue: 0.102) : Color(red: 0.957, green: 0.937, blue: 0.902))
-                .ignoresSafeArea()
-            WebViewHost(web: web)
-                .ignoresSafeArea()
-
-            if web.progress < 1 && web.failed == nil {
-                ProgressView(value: web.progress)
-                    .progressViewStyle(.linear)
-                    .tint(.accentColor)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 6)
+        Group {
+            if !booted {
+                ZStack { WarmBackground(); ProgressView() }
+            } else if api.authed == false {
+                LoginView()
+                    .transition(.opacity)
+            } else {
+                MainTabs()
+                    .environmentObject(router)
                     .transition(.opacity)
             }
-
-            if let msg = web.failed {
-                ErrorCard(message: msg, offlineCount: sync.count, retry: { web.load() }, settings: { web.showSettings = true }, offline: { showOffline = true })
-                    .padding(24)
-                    .frame(maxHeight: .infinity)
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
-            }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: web.failed)
-        .animation(.easeOut(duration: 0.2), value: web.progress < 1)
-        .sheet(isPresented: $web.showPrinter) {
-            PrinterSheet(web: web, bt: bt)
-        }
-        .sheet(isPresented: $web.showSettings) {
-            SettingsSheet(web: web)
-        }
-        .sheet(isPresented: $showOffline) {
-            OfflineLibraryView()
+        .animation(.easeInOut(duration: 0.3), value: api.authed)
+        .task {
+            await api.bootstrap()
+            booted = true
+            if api.authed == true { sync.refresh(force: true) }
         }
         .onChange(of: phase) { p in
-            if p == .active { sync.refresh() } // 回到前台：看看题库有没有更新（没变化只回 304）
+            if p == .active, api.authed == true { sync.refresh() }
+        }
+        .onChange(of: api.authed) { a in
+            if a == true { sync.refresh(force: true) }
         }
     }
 }
 
-struct ErrorCard: View {
-    let message: String
-    let offlineCount: Int
-    let retry: () -> Void
-    let settings: () -> Void
-    let offline: () -> Void
+struct MainTabs: View {
+    @EnvironmentObject private var router: Router
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 34, weight: .regular))
-                .foregroundStyle(.secondary)
-            Text("无法连接 MAX NOTE")
-                .font(.headline)
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            VStack(spacing: 10) {
-                Button("重试", action: retry).buttonStyle(GlassButtonStyle(prominent: true))
-                if offlineCount > 0 {
-                    Button("离线题库（\(offlineCount) 题）", action: offline).buttonStyle(GlassButtonStyle())
-                }
-                Button("修改网址", action: settings).buttonStyle(GlassButtonStyle())
-            }
-            .padding(.top, 4)
+        tabs
+            .fullScreenCover(item: $router.quiz) { QuizView(spec: $0) }
+            .sheet(item: $router.chat) { ChatView(spec: $0).environmentObject(router) }
+            .sheet(item: $router.lesson) { LessonView(spec: $0).environmentObject(router) }
+            .sheet(item: $router.web) { WebSheet(spec: $0) }
+            .sheet(item: $router.printSpec) { PrintFlow(preselect: $0.ids) }
+    }
+
+    @ViewBuilder
+    private var tabs: some View {
+        let base = TabView(selection: $router.tab) {
+            HomeView()
+                .tabItem { Label("首页", systemImage: "house.fill") }
+                .tag(0)
+            BankView(mode: .bank)
+                .tabItem { Label("题库", systemImage: "books.vertical.fill") }
+                .tag(1)
+            BankView(mode: .wrong)
+                .tabItem { Label("错题本", systemImage: "xmark.square.fill") }
+                .tag(2)
+            StudyView()
+                .tabItem { Label("学习台", systemImage: "sparkles") }
+                .tag(3)
         }
-        .padding(22)
-        .frame(maxWidth: 360)
-        .glassCard(cornerRadius: 28)
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            base.tabBarMinimizeBehavior(.onScrollDown) // iOS 26：往下滑，玻璃标签栏自动收起
+        } else {
+            base
+        }
+        #else
+        base
+        #endif
     }
 }
 
-struct SettingsSheet: View {
-    @ObservedObject var web: Web
+struct LoginView: View {
+    @StateObject private var api = API.shared
+    @State private var code = ""
+    @State private var busy = false
+    @State private var error: String?
+    @State private var showSite = false
+    @FocusState private var focus: Bool
+
+    var body: some View {
+        ZStack {
+            WarmBackground()
+            VStack(spacing: 22) {
+                Spacer()
+                Image("LoginMark")
+                    .resizable().scaledToFit()
+                    .frame(width: 96, height: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+                Text("MAX NOTE").font(.system(size: 30, weight: .bold, design: .rounded))
+                Text("不积跬步，无以至千里").font(.subheadline).foregroundStyle(.secondary)
+                VStack(spacing: 12) {
+                    SecureField("口令", text: $code)
+                        .textContentType(.password)
+                        .focused($focus)
+                        .submitLabel(.go)
+                        .onSubmit(go)
+                        .padding(14)
+                        .glassCard(cornerRadius: 16)
+                    if let e = error {
+                        Text(e).font(.footnote).foregroundStyle(.red).transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                    Button(action: go) {
+                        Text(busy ? "登录中…" : "进入")
+                    }
+                    .buttonStyle(GlassButtonStyle(prominent: true))
+                    .disabled(code.isEmpty || busy)
+                    .opacity(code.isEmpty ? 0.6 : 1)
+                }
+                .frame(maxWidth: 340)
+                Spacer()
+                Button("服务器地址") { showSite = true }
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            .padding(24)
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: error)
+        .sheet(isPresented: $showSite) { SiteSheet() }
+        .onAppear { focus = true }
+    }
+
+    private func go() {
+        guard !code.isEmpty, !busy else { return }
+        busy = true; error = nil
+        Task {
+            do { try await api.login(code); Haptic.ok() }
+            catch { self.error = error.localizedDescription; Haptic.bad() }
+            busy = false
+        }
+    }
+}
+
+struct SiteSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = Site.text
-
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     TextField("https://…", text: $text)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                } header: {
-                    Text("网站地址")
-                } footer: {
-                    Text("填你部署的 Workers 地址。留空恢复默认。")
-                }
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                } header: { Text("服务器地址") } footer: { Text("填你部署的 Workers 地址，留空恢复默认。") }
             }
-            .navigationTitle("设置")
+            .navigationTitle("服务器")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") {
-                        if Site.save(text) { web.load(); dismiss() }
-                    }
-                }
+                ToolbarItem(placement: .confirmationAction) { Button("保存") { if Site.save(text) { dismiss() } } }
             }
         }
         .presentationDetents([.medium])

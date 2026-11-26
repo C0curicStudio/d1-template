@@ -3,10 +3,9 @@ import PDFKit
 
 /// 打印机面板：蓝牙自动搜索 + 一键 AirPrint
 struct PrinterSheet: View {
-    @ObservedObject var web: Web
+    let pdf: PDFDocument
     @ObservedObject var bt: BTPrinter
     @Environment(\.dismiss) private var dismiss
-    @State private var busy = false
 
     var body: some View {
         NavigationStack {
@@ -74,24 +73,10 @@ struct PrinterSheet: View {
                     }
 
                     VStack(spacing: 10) {
-                        Button {
-                            busy = true
-                            web.sheetsPDF { doc in
-                                busy = false
-                                if let doc = doc { bt.print(doc) } else { bt.status = "没有可打印的页面，先在 A4 排版里选题" }
-                            }
-                        } label: {
-                            Text(busy ? "正在生成页面…" : "蓝牙打印")
-                        }
-                        .buttonStyle(GlassButtonStyle(prominent: true))
-                        .disabled(!bt.ready || busy)
-                        .opacity(bt.ready ? 1 : 0.5)
-
-                        Button("用 AirPrint 打印（Wi-Fi 打印机）") {
-                            dismiss()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { web.printSheets() }
-                        }
-                        .buttonStyle(GlassButtonStyle())
+                        Button { bt.print(pdf) } label: { Text("蓝牙打印（\(pdf.pageCount) 页）") }
+                            .buttonStyle(GlassButtonStyle(prominent: true))
+                            .disabled(!bt.ready)
+                            .opacity(bt.ready ? 1 : 0.5)
                     }
                 }
                 .padding(20)

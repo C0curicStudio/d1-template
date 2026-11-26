@@ -19,6 +19,7 @@ const INSTRUCTIONS = `MAX NOTE（错题练习，初三自用）。省用量：�
 分工：网站助手 Max 批选择/填空/文字题和有把握的作图题，整理错题、错因、题型标签和章节考点分类；你批 Max 拿不准的作图题和照片/手写题，处理照片收件箱，做错题文件夹后续（自己来取，网站不推送）。
 批改：get_inbox → save({grades})；有「Max初评」且同意就 save({ok:[作答id]})，要看图 get_data({kind:"img",id})。
 出题：get_data({kind:"tpl"})（每对话一次）；复习旧题 save({review:[id]})。
+题库编辑：先 get_data({kind:"find",q:"关键词"}) 找题、get_data({kind:"question",id}) 看全文，再 save({edit:[{id,stem,opts,ans,exp,tag,topic,category,subject,fig,due}]}) 改（只传要改的字段），save({remove:[id或题号]}) 彻底删题。
 错题文件夹：每天定时任务、或每次主动交互（get_inbox 提示有新题时），自己调用 get_data({kind:"folder"}) 取 Max 整理好的（题干、错答、错因、薄弱考点），不用问学生，照附言做。文件夹每天北京时间 2:30 清空，要在这之前取。作答标记：[计算]步骤 [作图]画板描述(单位=格,方程/交点已算) [电路]网表+通电结果。`;
 
 // 题目（短字段名省输出）
@@ -144,7 +145,7 @@ export function buildServer(env: Env, ctx?: ExecutionContext) {
 	s.registerTool(
 		"save",
 		{
-			description: "一次写入（各项都可省）：grades 批改（score 百分制，≥80 算对）；wrong 照片里的原错题（明天起复习）；questions 推送新题到今日练习；organize 改分类/标签；summary 首页总结；notes 考点→Notion 笔记对照表；retract 撤回已推送的题；plan 排期（哪些题今天做、哪些以后做）。",
+			description: "一次写入（各项都可省）：grades 批改（score 百分制，≥80 算对）；wrong 照片里的原错题（明天起复习）；questions 推送新题到今日练习；organize 改分类/标签；summary 首页总结；edit 编辑已有题（id 或题号 no；只传要改的字段，opts 传 [] 清空，exp/due 传空串清空）；remove 彻底删题（id 或题号）；notes 考点→Notion 笔记对照表；retract 撤回已推送的题；plan 排期（哪些题今天做、哪些以后做）。",
 			inputSchema: {
 				def: z.object({ subject: z.string().optional(), category: z.string().optional(), topic: z.string().optional() }).optional().describe("本批题共用的科目/章节/考点"),
 				questions: z.array(Q.extend({ origin: z.number().int().optional().describe("对应原错题 id") })).optional(),
@@ -156,13 +157,20 @@ export function buildServer(env: Env, ctx?: ExecutionContext) {
 					.optional(),
 				organize: z.array(z.object({ id: z.number().int(), subject: z.string().optional(), category: z.string().optional(), topic: z.string().optional(), tag: z.string().optional(), fig: z.any().optional().describe("补/改题图") })).optional(),
 				review: z.array(z.number().int()).optional().describe("旧题 id：放回今日练习复习"),
+				edit: z.array(z.object({
+					id: z.number().int().optional(), no: z.string().optional().describe("题号，如 数学3（没有 id 时用）"),
+					subject: z.string().optional(), category: z.string().optional(), topic: z.string().optional(), tag: z.string().optional().describe("题型标签，见模板"),
+					stem: z.string().optional(), opts: z.array(z.string()).optional().describe("选项；[] 清空"), ans: z.array(z.string()).optional().describe("答案"),
+					exp: z.string().optional().describe("解析；空串清空"), fig: z.any().optional().describe("题图；null 清除"), due: z.string().optional().describe("YYYY-MM-DD；空串/today = 马上做"),
+				})).max(40).optional().describe("编辑题库里已有的题（任何状态都能改）"),
+				remove: z.array(z.union([z.number().int(), z.string()])).max(50).optional().describe("彻底删除：id 或题号（作答记录保留；有待批改作答的不删）"),
 				summary: z.string().optional(),
 				plan: z.array(z.object({ q: z.array(z.string()).max(60).describe('题号，如 物理3；"last"=刚推的这一批'), d: z.string().describe('哪天做 YYYY-MM-DD；today 或更早=今天做') })).max(20).optional().describe('排期：网站只把到期的题放进今日练习，其余在题库里等着'),
 				retract: z.array(z.string()).max(30).optional().describe('撤回已推送的题：题号（如 数学3）或 "last"（撤回上一次推送的整批）。有待批改作答的题不撤'),
 				notes: z.array(z.object({ s: z.array(z.string()).describe("科目（可带别名，如 道法、道德与法治）"), t: z.string().describe("笔记标题"), u: z.string().describe("Notion 链接"), k: z.array(z.string()).optional().describe("考点关键词；省略 = 这一科的兜底页") })).max(80).optional().describe("考点→Notion 笔记对照表（整表替换），答错后网站按它给「Notion 笔记」按钮"),
 			},
 		},
-		async ({ def = {}, questions = [], wrong = [], done_uploads = [], grades = [], ok: agree = [], organize = [], review = [], summary, notes, retract = [], plan = [] }) => {
+		async ({ def = {}, questions = [], wrong = [], done_uploads = [], grades = [], ok: agree = [], organize = [], review = [], edit = [], remove = [], summary, notes, retract = [], plan = [] }) => {
 			const out: string[] = [];
 			const err: string[] = [];
 			if (agree.length) { // 同意 Max 初评：直接照初评打分
@@ -259,6 +267,53 @@ export function buildServer(env: Env, ctx?: ExecutionContext) {
 				}
 				out.push(`分类 ${n}`);
 			}
+			// 题库编辑：改已有题的内容/分类/标签/题图/排期（任何状态），或彻底删除
+			const findQ = async (id?: number, no?: string) => id
+				? await db.prepare("SELECT * FROM questions WHERE id = ?").bind(id).first<any>()
+				: no ? await db.prepare("SELECT * FROM questions WHERE subject || COALESCE(no, '') = ? ORDER BY id DESC").bind(no.trim()).first<any>() : null;
+			if (edit.length) {
+				let n = 0;
+				for (const e of edit) {
+					const q = await findQ(e.id, e.no);
+					if (!q) { err.push(`编辑：找不到 ${e.id ?? e.no ?? "?"}`); continue; }
+					const set: Record<string, unknown> = {};
+					if (e.subject !== undefined) set.subject = e.subject.trim();
+					if (e.category !== undefined) set.category = e.category.trim() || null;
+					if (e.topic !== undefined) set.topic = e.topic.trim() || null;
+					if (e.stem !== undefined) { if (!e.stem.trim()) { err.push(`编辑 ${q.subject}${q.no ?? ""}：题干不能为空`); continue; } set.stem = e.stem; }
+					if (e.opts !== undefined) set.options = e.opts.length ? JSON.stringify(e.opts) : null;
+					if (e.ans !== undefined) set.answer = JSON.stringify(e.ans);
+					if (e.exp !== undefined) set.explanation = e.exp.trim() || null;
+					if (e.fig !== undefined) set.fig = e.fig === null ? null : normFig(e.fig);
+					if (e.due !== undefined) set.due = dueOf(e.due);
+					// 题型标签 / 选项 / 答案变了：重新定题型（选择 ↔ 填空 ↔ 解答）和画板
+					if (e.tag !== undefined || e.opts !== undefined || e.ans !== undefined || e.stem !== undefined) {
+						const opts = e.opts !== undefined ? e.opts.length > 0 : !!q.options, ans: string[] = e.ans ?? JSON.parse(q.answer || "[]");
+						const p = pick({ subject: set.subject ?? q.subject, stem: (set.stem as string) ?? q.stem, tag: e.tag ?? q.tag, opts });
+						set.tag = p.tag;
+						set.type = p.tag === "选择" ? (ans.length > 1 ? "multi" : "single") : p.tag === "填空" ? "fill" : "short";
+						set.board = p.board === "coord" || p.board === "grid" ? p.board : null;
+					}
+					const keys = Object.keys(set);
+					if (!keys.length) { err.push(`编辑 ${q.subject}${q.no ?? ""}：没有要改的字段`); continue; }
+					await db.prepare(`UPDATE questions SET ${keys.map((k) => k + " = ?").join(", ")} WHERE id = ?`).bind(...Object.values(set), q.id).run();
+					if (set.subject && set.subject !== q.subject) // 换了科目：在新科目里接着编号
+						await db.prepare("UPDATE questions SET no = (SELECT COALESCE(MAX(no), 0) + 1 FROM questions WHERE subject = ?1 AND id <> ?2) WHERE id = ?2").bind(set.subject, q.id).run();
+					n++;
+				}
+				if (n) { out.push(`编辑 ${n} 道`); await db.prepare("DELETE FROM max_cache WHERE k LIKE 'hint:%' OR k LIKE 'cq:%' OR k LIKE 'lesson:%'").run(); } // 题改了：旧的提示/讲解缓存作废
+			}
+			if (remove.length) {
+				const gone: string[] = [];
+				for (const t of remove) {
+					const q = typeof t === "number" ? await findQ(t) : await findQ(undefined, t);
+					if (!q) { err.push(`删除：找不到 ${t}`); continue; }
+					if ((await db.prepare("SELECT 1 x FROM attempts WHERE question_id = ? AND status = '待批改' LIMIT 1").bind(q.id).first())) { err.push(`删除：${q.subject}${q.no ?? ""} 有待批改作答，先批改`); continue; }
+					await db.batch([db.prepare("DELETE FROM review_queue WHERE question_id = ?").bind(q.id), db.prepare("DELETE FROM marks WHERE question_id = ?").bind(q.id), db.prepare("DELETE FROM questions WHERE id = ?").bind(q.id)]);
+					gone.push(`${q.subject}${q.no ?? ""}`);
+				}
+				if (gone.length) out.push(`删除 ${gone.join(",")}`);
+			}
 			if (review.length) { // 复习：旧题今天到期，状态改回复习中
 				await db.batch(review.flatMap((id) => [
 					db.prepare("UPDATE questions SET status = 'active', status_at = NULL WHERE id = ?").bind(id),
@@ -283,10 +338,24 @@ export function buildServer(env: Env, ctx?: ExecutionContext) {
 		"get_data",
 		{
 			description: "tpl 出题模板；marked 学生标记的题；folder 错题文件夹新题（Max 已整理：总结+薄弱点+题干/错答/错因；all=true 含已取过的）；records 作答记录 TSV（days 默认 7）；bank 题库 TSV（all=true 含已掌握）；img 某作答的图（id）",
-			inputSchema: { kind: z.enum(["tpl", "marked", "folder", "records", "bank", "img"]), id: z.number().int().optional().describe("kind=img：作答id"), days: z.number().int().min(1).max(365).optional(), subject: z.string().optional(), all: z.boolean().optional() },
+			inputSchema: { kind: z.enum(["tpl", "marked", "folder", "records", "bank", "img", "find", "question"]), id: z.number().int().optional().describe("kind=img：作答id；kind=question：题目 id"), q: z.string().optional().describe("kind=find：搜索词（题干/考点/解析）"), no: z.string().optional().describe("kind=question：题号，如 数学3"), days: z.number().int().min(1).max(365).optional(), subject: z.string().optional(), all: z.boolean().optional() },
 		},
-		async ({ kind, id, days, subject, all }) => {
+		async ({ kind, id, days, subject, all, q, no }) => {
 			if (kind === "tpl") return text(TEMPLATES);
+			if (kind === "find") { // 在全部题里搜（含隐藏、已掌握、已归档），用来找到要编辑的题
+				const like = `%${(q ?? "").trim().slice(0, 30)}%`;
+				const { results } = await db.prepare(`SELECT q.id, q.subject || COALESCE(q.no, '') no, q.subject s, q.category c, q.topic t, q.tag g,
+					CASE WHEN q.status = 'mastered' THEN '已掌握' WHEN q.status = 'done' THEN '已归档' WHEN ${live()} THEN '在用' ELSE '已隐藏' END st, substr(q.stem, 1, 40) stem
+					FROM questions q WHERE (?1 = '%%' OR q.stem LIKE ?1 OR q.topic LIKE ?1 OR q.category LIKE ?1 OR q.explanation LIKE ?1) AND (?2 IS NULL OR q.subject = ?2) ORDER BY q.id DESC LIMIT 60`).bind(like, subject ?? null).all();
+				return text(tsv(results as Record<string, unknown>[]));
+			}
+			if (kind === "question") { // 一道题的完整内容（编辑前先看）
+				const r = id ? await db.prepare("SELECT * FROM questions WHERE id = ?").bind(id).first<any>()
+					: no ? await db.prepare("SELECT * FROM questions WHERE subject || COALESCE(no, '') = ? ORDER BY id DESC").bind(no.trim()).first<any>() : null;
+				if (!r) return text("找不到这道题");
+				const j = (v: string | null) => { try { return v ? JSON.parse(v) : null; } catch { return v; } };
+				return text(JSON.stringify({ id: r.id, no: `${r.subject}${r.no ?? ""}`, subject: r.subject, category: r.category, topic: r.topic, tag: r.tag, type: r.type, stem: r.stem, opts: j(r.options), ans: j(r.answer), exp: r.explanation, fig: j(r.fig), due: r.due, status: r.status, source: r.source }));
+			}
 			if (kind === "img") { // Max 初评有把握时没附的图：要看再取
 				const a = id ? await db.prepare("SELECT photo_key FROM attempts WHERE id = ?").bind(id).first<{ photo_key: string | null }>() : null;
 				const keys = String(a?.photo_key ?? "").split(",").filter((k) => k && !k.startsWith("views/")).slice(0, MAX_IMAGES);
