@@ -22,8 +22,13 @@ struct QuizView: View {
 
     enum Phase { case loading, doing, submitting, result, empty, failed }
 
-    private let native: Set<String> = ["single", "multi", "fill"]
-    private func isNative(_ q: J) -> Bool { native.contains(q.str("type")) && !(q.has("fig") && !(q["fig"] is NSNull)) && !["coord", "grid", "calc", "circuit"].contains(q.str("board")) }
+    // 选择、填空、简答/计算/解答等文字作答的题都在原生界面做；只有要作图、或带题图的才用网页版
+    private let drawTags: Set<String> = ["作图", "函数", "电路", "光路", "受力"]
+    private func isNative(_ q: J) -> Bool {
+        if q.has("fig") && !(q["fig"] is NSNull) { return false }
+        if q.str("type") == "short" && drawTags.contains(q.str("tag")) { return false }
+        return ["single", "multi", "fill", "short"].contains(q.str("type"))
+    }
     private func answered(_ i: Int) -> Bool { !(picks[i] ?? []).isEmpty || !(texts[i] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
@@ -94,6 +99,22 @@ struct QuizView: View {
             TextField("你的答案", text: Binding(get: { texts[idx] ?? "" }, set: { texts[idx] = $0 }))
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .padding(14).glassCard(cornerRadius: 16)
+        } else if type == "short" {
+            // 简答 / 计算 / 解答：直接写在这里，交卷后 Max 批改
+            let bind = Binding(get: { texts[idx] ?? "" }, set: { texts[idx] = $0 })
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: bind)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 200)
+                    .padding(10)
+                    .accessibilityIdentifier("shortAnswer")
+                if (texts[idx] ?? "").isEmpty {
+                    Text("写出你的解答过程和答案…").foregroundStyle(Color.mute.opacity(0.7)).padding(.horizontal, 15).padding(.vertical, 18).allowsHitTesting(false)
+                }
+            }
+            .background(Color.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.6))
+            Text("提交后由 Max 批改；要画图或手写拍照的题，可在网页版作答。").font(.caption).foregroundStyle(Color.mute)
         } else {
             if type == "multi" { Text("多选").font(.caption).foregroundStyle(.secondary) }
             VStack(spacing: 10) {
@@ -129,7 +150,7 @@ struct QuizView: View {
 
     private func webOnly(_ q: J) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("这道题要用画板、手写或看题图，用网页版作答", systemImage: "pencil.and.scribble").font(.subheadline).foregroundStyle(.secondary)
+            Label("这道题要作图或看题图，用网页版作答", systemImage: "pencil.and.scribble").font(.subheadline).foregroundStyle(.secondary)
             Button("在网页版作答") { sheet = .web(WebSpec(path: "/quiz?ids=\(q.int("id"))", title: "作答")) }.buttonStyle(GlassButtonStyle(prominent: true))
         }
         .padding(16).glassCard(cornerRadius: 18)
@@ -219,7 +240,7 @@ struct QuizView: View {
         var items: [[String: Any]] = []
         for (i, q) in qs.enumerated() where isNative(q) && answered(i) {
             let type = q.str("type")
-            let ans: Any = type == "fill" ? (texts[i] ?? "").trimmingCharacters(in: .whitespaces) : Array(picks[i] ?? []).sorted()
+            let ans: Any = (type == "fill" || type == "short") ? (texts[i] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) : Array(picks[i] ?? []).sorted()
             items.append(["question_id": q.int("id"), "answer": ans, "time_spent_sec": Int(Date().timeIntervalSince(started[i] ?? Date()))])
         }
         guard !items.isEmpty else { error = "还没有作答的题"; Haptic.bad(); return }
