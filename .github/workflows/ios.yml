@@ -42,11 +42,6 @@ jobs:
           cp -R MaxNote.app Payload/
           zip -qry "$GITHUB_WORKSPACE/MAX-NOTE.ipa" Payload
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MAX-NOTE-ipa
-          path: MAX-NOTE.ipa
-
       - name: 发布到 Releases（下载链接）
         uses: softprops/action-gh-release@v2
         with:
