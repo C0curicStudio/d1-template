@@ -124,6 +124,30 @@ final class API: ObservableObject {
         } catch let e as NetError { throw e } catch { throw NetError.offline }
     }
 
+    /// 上传图片（multipart）：错题照片等
+    func upload(_ path: String, field: String = "files", images: [Data]) async throws -> J {
+        let boundary = "B" + UUID().uuidString
+        var body = Data()
+        for (i, d) in images.enumerated() {
+            body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field)\"; filename=\"p\(i).jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
+            body.append(d)
+            body.append(Data("\r\n".utf8))
+        }
+        body.append(Data("--\(boundary)--\r\n".utf8))
+        var req = URLRequest(url: url(path))
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "content-type")
+        req.timeoutInterval = 60
+        do {
+            let (d, r) = try await session.upload(for: req, from: body)
+            let code = (r as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 401 { authed = false; throw NetError.unauthorized }
+            let j = (try? JSONSerialization.jsonObject(with: d)) as? J ?? [:]
+            if code >= 400 { throw NetError.server(j.str("error").isEmpty ? "上传失败（\(code)）" : j.str("error")) }
+            return j
+        } catch let e as NetError { throw e } catch { throw NetError.offline }
+    }
+
     func any(_ path: String, method: String = "GET", json: Any? = nil) async throws -> Any {
         let d = try await data(path, method: method, json: json)
         return (try? JSONSerialization.jsonObject(with: d, options: [.fragmentsAllowed])) ?? [:]

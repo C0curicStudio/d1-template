@@ -12,6 +12,7 @@ import { addDays, clearFolder, dailyCleanup, masterQuestion, removeQuestion, tod
 import { brief, byMax, chat, classifyState, gen, hint, see, why, MaxErr, maxDaily, organize, startClassify, status, unorganized, used, wrongSummary } from "./max";
 import { aiCfg, clearCfg, publicCfg, saveCfg } from "./aicfg";
 import { library, restore, snapshot } from "./library";
+import { checkSheet } from "./check";
 import { cachedPlan, lesson, masteryRows, plan as studyPlan } from "./study";
 import { live, ready, wrongSql } from "./live";
 import { check as kimiCheck, run as kimiRun } from "./kimi";
@@ -525,6 +526,14 @@ app.post("/api/max/see", async (c) => {
 	catch (e) { return c.json({ error: e instanceof MaxErr ? e.message : "看图失败：" + (e as Error).message }, e instanceof MaxErr ? 429 : 500); }
 });
 // 现场出题（题库没有同类题时）：临时题不进题库，答案一起发给网页当场判
+// 打印出来的练习卷写完后：拍照让 Max 对照参考答案逐题检查
+app.post("/api/max/check", async (c) => {
+	const b = await c.req.json<{ ids?: number[]; image?: string }>().catch(() => ({}) as { ids?: number[]; image?: string });
+	const img = String(b.image ?? ""), ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 40);
+	if (!/^data:image\/(jpeg|png|webp);base64,/.test(img) || img.length > 3_000_000) return c.json({ error: "图片格式不对或太大" }, 400);
+	try { return c.json(await checkSheet(c.env, ids, img, () => chatQuota(c.env.DB))); }
+	catch (e) { return c.json({ error: e instanceof MaxErr ? e.message : "检查失败：" + (e as Error).message }, e instanceof MaxErr ? 429 : 500); }
+});
 app.post("/api/max/gen", async (c) => {
 	const b = await c.req.json<{ topic?: string; n?: number; like?: number }>().catch(() => ({}) as { topic?: string; n?: number; like?: number });
 	try { return c.json({ questions: await gen(c.env, String(b.topic ?? "").slice(0, 40), Number(b.n) || 5, () => chatQuota(c.env.DB), Number(b.like) || undefined) }); }
@@ -541,7 +550,7 @@ app.post("/api/max/chat", async (c) => {
 	const body = await c.req.json<{ messages?: unknown; ctx?: any }>().catch(() => ({}) as { messages?: unknown; ctx?: any });
 	const ctx = body.ctx && typeof body.ctx === "object" ? body.ctx : {};
 	const messages = (Array.isArray(body.messages) ? body.messages : []).filter((m: any) => m && typeof m.content === "string" && m.content.trim())
-		.slice(-6).map((m: any) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content.slice(0, 800) }) as { role: "user" | "assistant"; content: string });
+		.slice(-6).map((m: any, i: number, a: any[]) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content.slice(0, i === a.length - 1 ? 2400 : 800) }) as { role: "user" | "assistant"; content: string });
 	if (!messages.length) return c.json({ error: "说点什么吧" }, 400);
 	const pg = ctx.page && typeof ctx.page === "object" ? { path: String(ctx.page.path ?? "").slice(0, 60), title: String(ctx.page.title ?? "").slice(0, 60), text: String(ctx.page.text ?? "").slice(0, 1500) } : undefined;
 	const t = ctx.tmp && typeof ctx.tmp === "object" && typeof ctx.tmp.stem === "string" ? ctx.tmp : null; // 临时练习题（不在题库）：网页把题带过来

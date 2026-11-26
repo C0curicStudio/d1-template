@@ -6,6 +6,8 @@ struct HomeView: View {
     @EnvironmentObject private var router: Router
     @StateObject private var feed = Feed("/api/home?brief=1")
     @StateObject private var study = Feed("/api/study")
+    @State private var shooting = false
+    @State private var note: String?
 
     private var h: J { feed.obj }
     private var brief: J { h.dict("brief") ?? [:] }
@@ -33,6 +35,15 @@ struct HomeView: View {
                             .font(.footnote).foregroundStyle(Color.mute).frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    HStack(spacing: 8) {
+                        Button { shooting = true } label: { Label("拍照上传错题", systemImage: "camera").lineLimit(1) }.buttonStyle(BrandButtonStyle())
+                        if h.int("marked") > 0 {
+                            Button { router.ask("解析我标记的题", ctx: ["marked": true], study: false) } label: { Label("解析标记的题（\(h.int("marked"))）", systemImage: "flag").lineLimit(1) }.buttonStyle(BrandButtonStyle())
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    if let n = note { Text(n).font(.footnote).foregroundStyle(Color.mute).frame(maxWidth: .infinity, alignment: .leading) }
+
                     if !brief.str("say").isEmpty { briefCard }
                     planCard
                     subjectsCard
@@ -54,8 +65,17 @@ struct HomeView: View {
             }
             .refreshable { await feed.load(); await study.load() }
             .task { await feed.load(); await study.load() }
+            .fullScreenCover(isPresented: $shooting) { ImagePicker(camera: true) { img in Task { await uploadPhoto(img) } }.ignoresSafeArea() }
             .onReceive(NotificationCenter.default.publisher(for: .bankChanged)) { _ in Task { await feed.load() } }
         }
+    }
+
+    /// 拍照上传错题：存进照片收件箱，等 Claude 整理成错题并出同类题
+    private func uploadPhoto(_ img: UIImage) async {
+        guard let d = ImageUtil.jpeg(img) else { note = "照片处理失败"; return }
+        note = "上传中…"
+        do { _ = try await API.shared.upload("/api/uploads", images: [d]); note = "已上传，等 Claude 处理成错题"; Haptic.ok(); await feed.load() }
+        catch { note = error.localizedDescription; Haptic.bad() }
     }
 
     private var briefCard: some View {

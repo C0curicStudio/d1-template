@@ -124,9 +124,10 @@ struct PDFPreview: UIViewRepresentable {
     func updateUIView(_ v: PDFView, context: Context) { v.document = doc }
 }
 
-/// 打印流程：选题 → 版式 → 预览 → AirPrint / 蓝牙 / 分享 PDF
+/// 打印流程：选题 → 版式（A4 预览直接显示、随改随变）→ AirPrint / 蓝牙 / 分享；写完后可拍照让 Max 检查
 struct PrintFlow: View {
     let preselect: [Int]
+    @EnvironmentObject private var router: Router
     @Environment(\.dismiss) private var dismiss
     @StateObject private var bank = Feed("/api/bank")
     @StateObject private var wrong = Feed("/api/wrong?tab=active")
@@ -138,81 +139,122 @@ struct PrintFlow: View {
     @State private var error: String?
     @State private var showPrinter = false
     @State private var source = 0
+    @State private var picking = false
+    @State private var checking = false
+    @State private var report: CheckReport?
+    @State private var full = false
 
     private var items: [J] { (source == 0 ? bank : wrong).obj.arr("items") }
+    private var signature: String { "\(selection.sorted())|\(opt.title)|\(opt.cols)|\(opt.size)|\(opt.answers)|\(opt.lines)|\(opt.nameLine)" }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Picker("来源", selection: $source) { Text("题库").tag(0); Text("错题本").tag(1) }.pickerStyle(.segmented)
-                    DisclosureGroup("选题（已选 \(selection.count) 题）") {
-                        HStack {
-                            Button("全选") { items.forEach { selection.insert($0.int("id")) } }
-                            Spacer()
-                            Button("清空") { selection.removeAll() }
-                        }.font(.footnote)
-                        ForEach(Array(items.enumerated()), id: \.offset) { _, q in
-                            let id = q.int("id")
-                            Button { Haptic.select(); if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } } label: {
-                                HStack(alignment: .top) {
-                                    Image(systemName: selection.contains(id) ? "checkmark.circle.fill" : "circle").foregroundStyle(selection.contains(id) ? Color.brand : .secondary)
-                                    VStack(alignment: .leading) {
-                                        Text(q.str("subject") + (q.str("topic").isEmpty ? "" : " › " + q.str("topic"))).font(.caption).foregroundStyle(.secondary)
-                                        Text(plain(q.str("stem").replacingOccurrences(of: "^[^·]*·", with: "", options: .regularExpression))).font(.subheadline).foregroundStyle(.primary).lineLimit(2)
+            VStack(spacing: 0) {
+                previewArea
+                Form {
+                    Section("选题") {
+                        Picker("来源", selection: $source) { Text("题库").tag(0); Text("错题本").tag(1) }.pickerStyle(.segmented)
+                        DisclosureGroup("选题（已选 \(selection.count) 题）") {
+                            HStack {
+                                // 同一行里有两个按钮：必须用 borderless，否则点一个会同时触发两个（「全选」会被「清空」抵消）
+                                Button("全选") { items.forEach { selection.insert($0.int("id")) } }.buttonStyle(.borderless)
+                                Spacer()
+                                Button("清空") { selection.removeAll() }.buttonStyle(.borderless)
+                            }
+                            .font(.footnote)
+                            ForEach(Array(items.enumerated()), id: \.offset) { _, q in
+                                let id = q.int("id")
+                                Button { Haptic.select(); if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } } label: {
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Image(systemName: selection.contains(id) ? "checkmark.circle.fill" : "circle").foregroundStyle(selection.contains(id) ? Color.brand : Color.mute)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(q.str("subject") + (q.str("topic").isEmpty ? "" : " › " + q.str("topic"))).font(.caption).foregroundStyle(Color.mute)
+                                            Text(plain(q.str("stem").replacingOccurrences(of: "^[^·]*·", with: "", options: .regularExpression))).font(.subheadline).foregroundStyle(Color.ink).lineLimit(2).multilineTextAlignment(.leading)
+                                        }
+                                        Spacer(minLength: 0)
                                     }
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
-                } header: { Text("选题") }
+                    .listRowBackground(Color.card)
 
-                Section("版式") {
-                    TextField("标题", text: $opt.title)
-                    Picker("分栏", selection: $opt.cols) { Text("单栏").tag(1); Text("双栏").tag(2) }.pickerStyle(.segmented)
-                    Picker("字号", selection: $opt.size) { Text("小").tag(1); Text("中").tag(2); Text("大").tag(3) }.pickerStyle(.segmented)
-                    Picker("答案", selection: $opt.answers) { Text("不带").tag(0); Text("题后").tag(1); Text("末页").tag(2) }.pickerStyle(.segmented)
-                    Picker("解答留白", selection: $opt.lines) { Text("不留").tag(0); Text("3 行").tag(3); Text("5 行").tag(5); Text("8 行").tag(8) }.pickerStyle(.segmented)
-                    Toggle("姓名 / 日期栏", isOn: $opt.nameLine)
+                    Section("版式") {
+                        TextField("标题", text: $opt.title)
+                        Picker("分栏", selection: $opt.cols) { Text("单栏").tag(1); Text("双栏").tag(2) }.pickerStyle(.segmented)
+                        Picker("字号", selection: $opt.size) { Text("小").tag(1); Text("中").tag(2); Text("大").tag(3) }.pickerStyle(.segmented)
+                        Picker("答案", selection: $opt.answers) { Text("不带").tag(0); Text("题后").tag(1); Text("末页").tag(2) }.pickerStyle(.segmented)
+                        Picker("解答留白", selection: $opt.lines) { Text("不留").tag(0); Text("3 行").tag(3); Text("5 行").tag(5); Text("8 行").tag(8) }.pickerStyle(.segmented)
+                        Toggle("姓名 / 日期栏", isOn: $opt.nameLine).tint(Color.brand)
+                    }
+                    .listRowBackground(Color.card)
+
+                    if let e = error { Section { Text(e).font(.footnote).foregroundStyle(Color.brand) }.listRowBackground(Color.card) }
                 }
-
-                Section {
-                    Button { Task { await build() } } label: { Label(busy ? "排版中…" : "生成 A4 预览", systemImage: "doc.text.magnifyingglass") }
-                        .disabled(selection.isEmpty || busy)
-                    if let e = error { Text(e).font(.footnote).foregroundStyle(Color.brand) }
-                } footer: { Text("公式在打印稿里用文字形式，带题图的题在网页版打印排版里更完整。") }
+                .scrollContentBackground(.hidden)
             }
+            .background(WarmBackground())
             .navigationTitle("A4 排版打印")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
-            .navigationDestination(isPresented: Binding(get: { doc != nil }, set: { if !$0 { doc = nil } })) { if let d = doc { preview(d) } }
-            .task {
-                selection = Set(preselect)
-                await bank.load(); await wrong.load()
-            }
-        }
-        .sheet(isPresented: $showPrinter) { if let d = doc { PrinterSheet(pdf: d, bt: bt) } }
-    }
-
-    @ViewBuilder private func preview(_ d: PDFDocument) -> some View {
-        PDFPreview(doc: d)
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("\(d.pageCount) 页 A4")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    if let data = d.dataRepresentation() {
+                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if let d = doc, let data = d.dataRepresentation() {
                         ShareLink(item: PDFFile(data: data, name: opt.title), preview: SharePreview(opt.title + ".pdf")) { Image(systemName: "square.and.arrow.up") }
                     }
                 }
             }
-            .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 10) {
-                    Button { airPrint(d) } label: { Label("AirPrint", systemImage: "printer") }.buttonStyle(GlassButtonStyle(prominent: true))
-                    Button { showPrinter = true } label: { Label("蓝牙打印机", systemImage: "dot.radiowaves.left.and.right") }.buttonStyle(GlassButtonStyle())
-                }
-                .padding(.horizontal, 16).padding(.vertical, 8)
+            .safeAreaInset(edge: .bottom) { actionBar }
+            .task { selection = Set(preselect); await bank.load(); await wrong.load() }
+            .task(id: signature) {
+                // 选题 / 版式一变，预览自动重排（稍等一下，避免连点时反复排版）
+                guard !selection.isEmpty else { doc = nil; return }
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                if !Task.isCancelled { await build() }
             }
+            .fullScreenCover(isPresented: $picking) { ImagePicker(camera: true) { img in Task { await check(img) } }.ignoresSafeArea() }
+            .sheet(item: $report) { CheckReportView(report: $0).environmentObject(router) }
+            .sheet(isPresented: $showPrinter) { if let d = doc { PrinterSheet(pdf: d, bt: bt) } }
+            .fullScreenCover(isPresented: $full) { if let d = doc { NavigationStack { PDFPreview(doc: d).background(Color.cream).navigationTitle("\(d.pageCount) 页 A4").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { full = false } } } } } }
+        }
+    }
+
+    /// 顶部：A4 预览直接显示
+    @ViewBuilder private var previewArea: some View {
+        ZStack(alignment: .topTrailing) {
+            if let d = doc {
+                PDFPreview(doc: d)
+                    .frame(height: 330)
+                    .background(Color.card)
+                Button { full = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.footnote.weight(.bold)).foregroundStyle(Color.ink).padding(9).background(.ultraThinMaterial, in: Circle()) }
+                    .padding(10)
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.text").font(.system(size: 30)).foregroundStyle(Color.mute.opacity(0.6))
+                    Text(busy ? "排版中…" : "选几道题，这里直接显示 A4 预览").font(.subheadline).foregroundStyle(Color.mute)
+                }
+                .frame(maxWidth: .infinity).frame(height: 330).background(Color.card)
+            }
+        }
+        .overlay(Rectangle().fill(Color.hairline).frame(height: 0.6), alignment: .bottom)
+    }
+
+    private var actionBar: some View {
+        VStack(spacing: 8) {
+            if checking { HStack(spacing: 8) { ProgressView(); Text("Max 正在看照片、对照答案批改…").font(.footnote).foregroundStyle(Color.mute) } }
+            HStack(spacing: 8) {
+                Button { if let d = doc { airPrint(d) } } label: { Label("AirPrint", systemImage: "printer").lineLimit(1) }.buttonStyle(GlassButtonStyle(prominent: true))
+                Button { showPrinter = true } label: { Label("蓝牙", systemImage: "dot.radiowaves.left.and.right").lineLimit(1) }.buttonStyle(GlassButtonStyle())
+            }
+            .disabled(doc == nil).opacity(doc == nil ? 0.5 : 1)
+            Button { picking = true } label: { Label("写完了：拍照让 Max 检查", systemImage: "camera.viewfinder").lineLimit(1) }
+                .buttonStyle(BrandButtonStyle(small: false))
+                .disabled(doc == nil || checking).opacity(doc == nil ? 0.5 : 1)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.ultraThinMaterial)
     }
 
     private func build() async {
@@ -226,9 +268,8 @@ struct PrintFlow: View {
                 let r = try await API.shared.obj("/api/print?ids=" + part)
                 all += r.arr("items").map { PItem(subject: $0.str("subject"), topic: $0.str("topic"), stem: $0.str("stem"), type: $0.str("type"), tag: $0.str("tag"), explanation: $0.str("explanation"), options: $0.strs("options"), answer: $0.strs("answer")) }
             }
-            guard let d = PDFMaker.make(all, opt) else { error = "排版失败"; return }
-            doc = d
-            Haptic.ok()
+            doc = PDFMaker.make(all, opt)
+            if doc == nil { error = "排版失败" }
         } catch { self.error = error.localizedDescription }
     }
 
@@ -239,6 +280,50 @@ struct PrintFlow: View {
         info.jobName = opt.title; info.outputType = .general
         pc.printInfo = info; pc.printingItem = data
         pc.present(animated: true, completionHandler: nil)
+    }
+
+    /// 拍下写完的练习卷 → Max 转写作答、对照参考答案逐题批改
+    private func check(_ img: UIImage) async {
+        guard let d = ImageUtil.jpeg(img, maxSide: 1600, maxBytes: 1_900_000) else { error = "照片处理失败"; return }
+        checking = true; error = nil
+        defer { checking = false }
+        do {
+            let r = try await API.shared.obj("/api/max/check", method: "POST", json: ["ids": Array(selection).sorted(), "image": ImageUtil.dataURL(d)])
+            report = CheckReport(report: r.str("report"), transcript: r.str("transcript"))
+            Haptic.ok()
+        } catch { self.error = error.localizedDescription; Haptic.bad() }
+    }
+}
+
+struct CheckReport: Identifiable { let id = UUID(); let report: String; let transcript: String }
+
+struct CheckReportView: View {
+    let report: CheckReport
+    @EnvironmentObject private var router: Router
+    @Environment(\.dismiss) private var dismiss
+    @State private var showTranscript = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 8) { MaxLogo(size: 24); Text("Max 的检查结果").font(.headline).foregroundStyle(Color.ink) }
+                    Text(md(report.report)).foregroundStyle(Color.ink).lineSpacing(5).textSelection(.enabled).card()
+                    DisclosureGroup("Max 看到的你的作答（转写）", isExpanded: $showTranscript) {
+                        Text(plain(report.transcript)).font(.footnote).foregroundStyle(Color.mute).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                    }
+                    .tint(Color.mute)
+                    Text("转写来自照片，可能有识别错误；有疑问可以接着问 Max。").font(.caption).foregroundStyle(Color.mute)
+                    Button("接着问 Max") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { router.ask("我刚做完一份练习卷，你检查的结果是：\n" + String(report.report.prefix(600)) + "\n帮我讲讲错的题该怎么改、最该先补什么。", study: true) } }
+                        .buttonStyle(BrandButtonStyle(filled: true, small: false))
+                }
+                .padding(16)
+            }
+            .background(WarmBackground())
+            .navigationTitle("检查结果")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+        }
     }
 }
 

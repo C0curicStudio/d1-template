@@ -113,6 +113,8 @@ private func mapChars(_ s: String, _ table: [Character: Character], _ fallback: 
 
 func plain(_ input: String) -> String {
     var t = input.replacingOccurrences(of: "$", with: "")
+        .replacingOccurrences(of: "^{\\circ}", with: "°").replacingOccurrences(of: "^\\circ", with: "°")
+    for fn in ["sin", "cos", "tan", "cot", "sec", "csc", "log", "ln", "lim", "max", "min"] { t = t.replacingOccurrences(of: "\\" + fn, with: fn) }
     // 化学式 \ce{H2O} \ce{2KMnO4 ->[\Delta] K2MnO4}
     t = rx(t, "\\\\ce\\{([^{}]*)\\}") { g in
         var c = g[1].replacingOccurrences(of: "<=>", with: " ⇌ ").replacingOccurrences(of: "\\Delta", with: "△")
