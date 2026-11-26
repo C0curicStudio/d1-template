@@ -11,6 +11,7 @@ import { chatQuota, edge, flag, guard } from "./security";
 import { addDays, clearFolder, dailyCleanup, masterQuestion, removeQuestion, today, updateQueue } from "./review";
 import { brief, byMax, chat, classifyState, gen, hint, see, why, MaxErr, maxDaily, organize, startClassify, status, unorganized, used, wrongSummary } from "./max";
 import { aiCfg, clearCfg, publicCfg, saveCfg } from "./aicfg";
+import { library, restore, snapshot } from "./library";
 import { cachedPlan, lesson, masteryRows, plan as studyPlan } from "./study";
 import { live, ready, wrongSql } from "./live";
 import { check as kimiCheck, run as kimiRun } from "./kimi";
@@ -460,6 +461,16 @@ app.get("/api/print", async (c) => {
 	const by = new Map(results.map((q) => [q.id, q]));
 	return c.json({ items: ids.map((id) => by.get(id)).filter(Boolean).map((q) => ({ ...clientQ(q!), answer: parse<string[]>(q!.answer, []), explanation: q!.explanation })) });
 });
+// 题库全集：所有题永久保存，可搜索/筛选/放回练习；sync 给 iOS App 做本地离线副本（带 ETag，没变化回 304）
+app.get("/api/library", async (c) => {
+	const q = c.req.query();
+	return c.json(await library(c.env.DB, { q: q.q, subject: q.subject, state: q.state, tag: q.tag, offset: Number(q.offset) || 0, limit: Number(q.limit) || 40 }));
+});
+app.get("/api/library/sync", async (c) => {
+	const r = await snapshot(c.env.DB, c.req.header("if-none-match") ?? null);
+	return r.status === 304 ? new Response(null, { status: 304, headers: { ETag: r.etag } }) : new Response(r.body, { headers: { "content-type": "application/json; charset=utf-8", ETag: r.etag, "cache-control": "no-store" } });
+});
+app.post("/api/question/:id/restore", async (c) => (await restore(c.env.DB, Number(c.req.param("id"))), c.json({ ok: true })));
 app.get("/study", (c) => c.redirect("/")); // 学习台已并入主页
 app.get("/api/study", async (c) => {
 	const rows = await masteryRows(c.env.DB), cfg = await aiCfg(c.env);

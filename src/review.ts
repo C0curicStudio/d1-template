@@ -30,7 +30,7 @@ export async function updateQueue(db: D1Database, questionId: number, correct: b
 		 FROM questions q LEFT JOIN review_queue r ON r.question_id = q.id WHERE q.id = ?`).bind(questionId).first<{ orig: number; status: string; wrongs: number; stage: number | null }>();
 	if (!q) return;
 	const del = () => db.prepare("DELETE FROM review_queue WHERE question_id = ?").bind(questionId).run();
-	if (!q.orig && !q.wrongs) { await del(); return setStatus(db, questionId, "done"); } // 一次就做对：隐藏，30 天后删
+	if (!q.orig && !q.wrongs) { await del(); return setStatus(db, questionId, "done"); } // 一次就做对：隐藏（题永久保存在题库全集）
 	if (q.stage == null && q.status === "mastered") return; // 已在错题文件夹的旧错题拿出来练、做对了：留在文件夹
 	const gaps = q.wrongs >= 2 ? HARD_GAPS : GAPS, next = (q.stage ?? 0) + 1;
 	if (next >= gaps.length) { await del(); return setStatus(db, questionId, "mastered"); } // 四档都过了：隐藏进错题文件夹
@@ -58,19 +58,18 @@ export async function folderSeen(db: D1Database): Promise<number[]> {
 	try { return JSON.parse((await db.prepare("SELECT v FROM meta WHERE k = 'folder_seen'").first<{ v: string }>())?.v ?? "[]"); } catch { return []; }
 }
 
-/** 每天北京时间 2:30（Cron）：清空错题文件夹——Claude 要在这之前取走。连带清掉复习队列、标记、待批改作答；作答记录保留 */
+/** 每天北京时间 2:30（Cron）：清空错题文件夹——Claude 要在这之前取走。题目不再删除：改成「已归档」（status=done）留在题库全集里；连带清掉复习队列、标记；作答记录保留 */
 export async function clearFolder(db: D1Database) {
 	const sub = "SELECT id FROM questions WHERE status = 'mastered'";
 	await db.batch([
 		db.prepare(`DELETE FROM review_queue WHERE question_id IN (${sub})`),
 		db.prepare(`DELETE FROM marks WHERE question_id IN (${sub})`),
-		db.prepare(`DELETE FROM attempts WHERE status = '待批改' AND question_id IN (${sub})`),
-		db.prepare(`DELETE FROM questions WHERE status = 'mastered'`),
+		db.prepare(`UPDATE questions SET status = 'done', status_at = datetime('now') WHERE status = 'mastered'`),
 		db.prepare("DELETE FROM meta WHERE k IN ('folder_sum', 'folder_seen')"),
 	]);
 }
 
-/** 每日清理（Cron）：精简题库和照片，作答记录永久保留供统计 */
+/** 每日清理（Cron）：照片和临时数据精简；题目永久保存（隐藏/做对的只是不再出现，在「题库全集」里能找到），作答记录永久保留 */
 export async function dailyCleanup(db: D1Database) {
 	await db.prepare("DELETE FROM marks WHERE created_at < datetime('now','-1 day')").run(); // 标记的题 24 小时过期
 	const delKeys = async (keys: string[]) => {
@@ -79,13 +78,13 @@ export async function dailyCleanup(db: D1Database) {
 			await db.prepare(`DELETE FROM photos WHERE key IN (${part.map(() => "?").join(",")})`).bind(...part).run();
 		}
 	};
-	// 1. 一次做对的题 超过 30 天：删题（attempts 保留）；错题文件夹每天 2:30 单独清空（clearFolder）；题库里隐藏（超过 24/48 小时）满 30 天的也清掉
+	// 1. 一次做对的题标成 done 隐藏；题库里隐藏满 30 天的也标成 done；错题文件夹每天 2:30 归档（clearFolder）。都不删题
 	await db.batch([
 		// 做对过、从没错过的题（含补发的旧题）：标成 done 隐藏，下面按 30 天删
 		db.prepare("UPDATE questions SET status = 'done', status_at = (SELECT MAX(a.created_at) FROM attempts a WHERE a.question_id = questions.id AND a.is_correct = 1) WHERE status = 'active' AND COALESCE(source, '') <> '原错题' AND EXISTS (SELECT 1 FROM attempts a WHERE a.question_id = questions.id AND a.is_correct = 1) AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.question_id = questions.id AND a.is_correct = 0)"),
 		// 排到以后才做的题（due）从那天起算，别在还没出现前就被删掉（和 live.ts 的计时起点一致）
-		db.prepare("DELETE FROM questions WHERE status = 'active' AND created_at < datetime('now','-30 days') AND (due IS NULL OR datetime(due, '-8 hours') < datetime('now','-30 days')) AND NOT (id IN (SELECT question_id FROM review_queue) AND (source = '原错题' OR id IN (SELECT question_id FROM attempts WHERE is_correct = 0)))"), // 还在间隔复习的错题不删
-		db.prepare("DELETE FROM questions WHERE status = 'done' AND status_at < datetime('now','-30 days')"),
+		// 隐藏超过 30 天的题：不再删除，改成已归档（status=done）；还在间隔复习的错题不动
+		db.prepare("UPDATE questions SET status = 'done', status_at = datetime('now') WHERE status = 'active' AND created_at < datetime('now','-30 days') AND (due IS NULL OR datetime(due, '-8 hours') < datetime('now','-30 days')) AND NOT (id IN (SELECT question_id FROM review_queue) AND (source = '原错题' OR id IN (SELECT question_id FROM attempts WHERE is_correct = 0)))"),
 		db.prepare("DELETE FROM review_queue WHERE question_id NOT IN (SELECT id FROM questions WHERE status = 'active')"),
 		db.prepare("DELETE FROM attempts WHERE status = '待批改' AND question_id NOT IN (SELECT id FROM questions)"), // 题删了，待批改的作答没法批
 		// 幽灵作答：什么都没写、照片也不存在的待批改作答（批不了、也看不见），直接清掉

@@ -3,6 +3,9 @@ import SwiftUI
 struct RootView: View {
     @StateObject private var web = Web()
     @StateObject private var bt = BTPrinter()
+    @StateObject private var sync = LibrarySync.shared
+    @State private var showOffline = false
+    @Environment(\.scenePhase) private var phase
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -23,7 +26,7 @@ struct RootView: View {
             }
 
             if let msg = web.failed {
-                ErrorCard(message: msg, retry: { web.load() }, settings: { web.showSettings = true })
+                ErrorCard(message: msg, offlineCount: sync.count, retry: { web.load() }, settings: { web.showSettings = true }, offline: { showOffline = true })
                     .padding(24)
                     .frame(maxHeight: .infinity)
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
@@ -37,13 +40,21 @@ struct RootView: View {
         .sheet(isPresented: $web.showSettings) {
             SettingsSheet(web: web)
         }
+        .sheet(isPresented: $showOffline) {
+            OfflineLibraryView()
+        }
+        .onChange(of: phase) { p in
+            if p == .active { sync.refresh() } // 回到前台：看看题库有没有更新（没变化只回 304）
+        }
     }
 }
 
 struct ErrorCard: View {
     let message: String
+    let offlineCount: Int
     let retry: () -> Void
     let settings: () -> Void
+    let offline: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -58,6 +69,9 @@ struct ErrorCard: View {
                 .multilineTextAlignment(.center)
             VStack(spacing: 10) {
                 Button("重试", action: retry).buttonStyle(GlassButtonStyle(prominent: true))
+                if offlineCount > 0 {
+                    Button("离线题库（\(offlineCount) 题）", action: offline).buttonStyle(GlassButtonStyle())
+                }
                 Button("修改网址", action: settings).buttonStyle(GlassButtonStyle())
             }
             .padding(.top, 4)
