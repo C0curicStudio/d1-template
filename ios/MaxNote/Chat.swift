@@ -27,7 +27,9 @@ final class ChatModel: ObservableObject {
         msgs.append(ChatMsg(role: "assistant", text: ""))
         let idx = msgs.count - 1
         var ctx = spec.ctx
-        ctx["study"] = spec.study; ctx["topic"] = spec.topic; ctx["deep"] = deep; ctx["web"] = web; ctx["len"] = spec.study ? "l" : "m"
+        ctx["study"] = spec.study; ctx["topic"] = spec.topic; ctx["deep"] = deep; ctx["web"] = web
+        let ud = UserDefaults.standard
+        ctx["len"] = ud.string(forKey: "maxLen") ?? (spec.study ? "l" : "m"); ctx["pref"] = ud.string(forKey: "maxPref") ?? "auto"
         busy = true
         task = Task {
             do { try await API.shared.stream("/api/max/chat", json: ["messages": history, "ctx": ctx]) { text in if idx < self.msgs.count { self.msgs[idx].text = text } } }

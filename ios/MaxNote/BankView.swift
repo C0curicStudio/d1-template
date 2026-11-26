@@ -64,6 +64,8 @@ struct BankView: View {
                             Text("\(g.rows.count) 题").foregroundStyle(.secondary)
                             if mode == .wrong && tab == "active" {
                                 Button("重做") { router.practice(ids: g.rows.map { $0.int("id") }, title: g.key) }.font(.footnote.weight(.semibold)).textCase(nil)
+                            } else if mode == .bank && scope == 0 {
+                                Button("练这组") { router.practice(ids: g.rows.map { $0.int("id") }, title: g.key) }.font(.footnote.weight(.semibold)).textCase(nil)
                             }
                         }
                     }
@@ -85,6 +87,7 @@ struct BankView: View {
                         }
                         Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { selecting.toggle(); selection.removeAll() } } label: { Label(selecting ? "完成选择" : "选择多题", systemImage: "checkmark.circle") }
                         Button { router.print(ids: []) } label: { Label("A4 排版打印", systemImage: "printer") }
+                        if mode == .bank { Button { Task { await classify() } } label: { Label("让 Max 整理分类", systemImage: "folder.badge.gearshape") } }
                     } label: { Image(systemName: subject.isEmpty ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill") }
                 }
             }
@@ -162,6 +165,18 @@ struct BankView: View {
         await feed.load()
         if mode == .wrong { await sum.load() }
         if mode == .bank && scope == 1 { await loadLibrary() }
+    }
+
+    /// 让 Max 合并同义考点、归章节（后台整理，轮询结果）
+    private func classify() async {
+        do {
+            _ = try await API.shared.obj("/api/max/classify", method: "POST", json: [:])
+            for _ in 0..<40 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if let s = try? await API.shared.obj("/api/max/classify"), s.str("status") != "running" { break }
+            }
+            Haptic.ok(); await reload()
+        } catch { Haptic.bad() }
     }
 
     private func switchTab() async {
@@ -248,6 +263,7 @@ struct QuestionDetail: View {
     @StateObject private var feed: Feed
     @State private var confirmDelete = false
     @State private var toast: String?
+    @State private var note: J?
 
     init(id: Int, onChanged: @escaping () -> Void) {
         self.id = id
@@ -306,6 +322,9 @@ struct QuestionDetail: View {
                     }
                 }
             }
+            if let n = note, let u = URL(string: n.str("url")) {
+                Section { Link(destination: u) { Label("Notion 笔记：" + n.str("title"), systemImage: "book") }.listRowBackground(Color.card) }
+            }
             if let t = toast { Section { Text(t).font(.footnote).foregroundStyle(.secondary) } }
         }
         .listStyle(.insetGrouped)
@@ -328,7 +347,12 @@ struct QuestionDetail: View {
         .confirmationDialog("删除这道题？（做题记录会保留）", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("删除", role: .destructive) { Task { await act("/api/question/\(id)/delete", nil); dismiss() } }
         }
-        .task { await feed.load() }
+        .task {
+            await feed.load()
+            // 考点 → Notion 笔记链接（对照表里有才显示）
+            let q = feed.obj
+            if !q.str("topic").isEmpty, let r = try? await API.shared.obj("/api/notion?subject=\(q.str("subject").urlEnc)&topic=\(q.str("topic").urlEnc)") { note = r.dict("note") }
+        }
     }
 
     private func act(_ path: String, _ ok: String?) async {

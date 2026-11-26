@@ -17,6 +17,10 @@ struct SettingsView: View {
     @State private var confirmClear = false
     @State private var clearMsg = ""
     @State private var showOffline = false
+    @AppStorage("maxLen") private var maxLen = "m"
+    @AppStorage("maxPref") private var maxPref = "auto"
+    @State private var status: J = [:]
+    @State private var kimi: String?
 
     private let presets: [String: (String, String, String)] = [
         "DeepSeek": ("https://api.deepseek.com", "deepseek-chat", "deepseek-reasoner"),
@@ -43,6 +47,19 @@ struct SettingsView: View {
                     if cfg.bool("on") { Button("清除密钥", role: .destructive) { Task { await clearKey() } } }
                     if let n = note { Text(n).font(.footnote).foregroundStyle(.secondary) }
                 } header: { Text("接入模型") } footer: { Text("密钥存在你自己的服务器数据库里，不会再传回手机；后台批改任务也能用。") }
+
+                Section {
+                    Picker("回答长短", selection: $maxLen) { Text("简洁省额度").tag("s"); Text("标准").tag("m"); Text("详细").tag("l") }
+                    Picker("优先用", selection: $maxPref) { Text("自动").tag("auto"); Text("我的模型").tag("ds"); Text("只用 Cloudflare").tag("cf") }
+                    let cf = status.dict("cfu") ?? [:], ds = status.dict("ds") ?? [:]
+                    if !status.isEmpty {
+                        HStack { Text("Cloudflare 今日用量"); Spacer(); Text("\(cf.int("pct"))%").foregroundStyle(Color.mute) }
+                        HStack { Text((ds.str("name").isEmpty ? "我的模型" : ds.str("name")) + " 今日用量"); Spacer(); Text(ds.bool("on") ? "\(ds.int("pct"))%" : "未接入").foregroundStyle(Color.mute) }
+                        if let ch = status.dict("chats") { HStack { Text("今天和 Max 聊了"); Spacer(); Text("\(ch.int("used")) / \(ch.int("cap")) 次").foregroundStyle(Color.mute) } }
+                    }
+                    Button("Max 自检（出错时让 AI 看日志）") { Task { await runKimi() } }
+                    if let k = kimi { Text(k).font(.footnote).foregroundStyle(Color.mute) }
+                } header: { Text("Max 助手") }
 
                 Section("数据") {
                     HStack { Text("本地题库副本"); Spacer(); Text("\(sync.count) 题").foregroundStyle(.secondary) }
@@ -75,7 +92,13 @@ struct SettingsView: View {
         }
     }
 
+    private func runKimi() async {
+        kimi = "自检中…"
+        do { let r = try await API.shared.obj("/api/max/kimi", method: "POST", json: [:]); kimi = r.str("text").isEmpty ? "一切正常" : r.str("text") } catch { kimi = error.localizedDescription }
+    }
+
     private func loadCfg() async {
+        if let s = try? await API.shared.obj("/api/max/status") { status = s }
         guard let c = try? await API.shared.obj("/api/ai/config") else { return }
         cfg = c
         if c.bool("on") {
