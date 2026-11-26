@@ -127,7 +127,7 @@ func plain(_ input: String) -> String {
         ("\\approx", "≈"), ("\\infty", "∞"), ("\\circ", "°"), ("\\angle", "∠"), ("\\triangle", "△"), ("\\perp", "⊥"), ("\\parallel", "∥"), ("\\because", "∵"), ("\\therefore", "∴"),
         ("\\rightarrow", "→"), ("\\to", "→"), ("\\Rightarrow", "⇒"), ("\\leftrightarrow", "↔"), ("\\Omega", "Ω"), ("\\omega", "ω"), ("\\Delta", "Δ"), ("\\delta", "δ"), ("\\alpha", "α"), ("\\beta", "β"),
         ("\\gamma", "γ"), ("\\theta", "θ"), ("\\lambda", "λ"), ("\\mu", "μ"), ("\\pi", "π"), ("\\rho", "ρ"), ("\\sigma", "σ"), ("\\varphi", "φ"), ("\\phi", "φ"), ("\\eta", "η"),
-        ("\\left", ""), ("\\right", ""), ("\\,", " "), ("\;", " "), ("\\!", ""), ("\\quad", "  "), ("\\text", ""), ("\\mathrm", ""), ("\\%", "%"), ("\\{", "{"), ("\\}", "}")]
+        ("\\left", ""), ("\\right", ""), ("\\,", " "), ("\\;", " "), ("\\!", ""), ("\\quad", "  "), ("\\text", ""), ("\\mathrm", ""), ("\\%", "%"), ("\\{", "{"), ("\\}", "}")]
     for (a, b) in sym { t = t.replacingOccurrences(of: a, with: b) }
     t = rx(t, "\\^\\{([^{}]*)\\}") { mapChars($0[1], SUP, "^") }
     t = rx(t, "\\^([0-9A-Za-z+\\-])") { mapChars($0[1], SUP, "^") }
