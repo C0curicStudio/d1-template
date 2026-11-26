@@ -96,7 +96,7 @@ struct MaxLogo: View {
                 let a = Double(i) / 12 * 2 * .pi - .pi / 2 + (active ? spin : 0)
                 let r = r0 * (1 + CGFloat(active ? amp * sin(t * speed + Double(i) * 0.9) : 0))
                 var p = Path()
-                p.move(to: CGPoint(x: c.x + CGFloat(cos(a)) * 2.4 * s, y: c.y + CGFloat(sin(a)) * 2.4 * s))
+                p.move(to: c) // 从正中心出发，中间没有空洞
                 p.addLine(to: CGPoint(x: c.x + CGFloat(cos(a)) * r * s, y: c.y + CGFloat(sin(a)) * r * s))
                 ctx.stroke(p, with: .color(Color.brand), style: StrokeStyle(lineWidth: 2.3 * s, lineCap: .round))
             }
