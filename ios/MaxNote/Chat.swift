@@ -220,10 +220,11 @@ struct MaxIsland: View {
             let lo = top + d, hi = h - 120
             let rest = CGPoint(x: right ? w - d / 2 - 10 : d / 2 + 10, y: min(max(yFrac * h, lo), hi))
             let pw = min(w - 24, 420)
-            let availH = max(260, h - top - 14 - kb - (kb > 0 ? 8 : 70))
-            let ph = min(availH, min(h * 0.74, 640))
+            // 面板贴着底部（标签栏上方；键盘弹出时贴着键盘上沿），不再悬在屏幕上半截
+            let bottom = kb > 0 ? h - kb - 8 : h - 96
+            let ph = min(max(260, bottom - top - 14), min(h * 0.68, 600))
             let px = right ? w - 12 - pw / 2 : 12 + pw / 2
-            let py = rest.y > h / 2 ? min(rest.y + d / 2, h - (kb > 0 ? kb + 8 : 76)) - ph / 2 : max(rest.y - d / 2, top + 8) + ph / 2
+            let py = bottom - ph / 2
             let anchor = UnitPoint(x: (rest.x - (px - pw / 2)) / pw, y: (rest.y - (py - ph / 2)) / ph)
 
             ZStack {
