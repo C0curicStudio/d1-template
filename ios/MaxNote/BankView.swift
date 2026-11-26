@@ -200,21 +200,20 @@ struct WrongSummary: View {
                     if !s.str("summary").isEmpty { Text(s.str("summary")).font(.subheadline) }
                     let reasons = (s["max"] as? [String: Any] ?? [:]).compactMap { k, v -> (String, Int)? in (v as? Int).map { (k, $0) } }.filter { $0.0 != "待分析" }.sorted { $0.1 > $1.1 }.prefix(3)
                     ForEach(Array(reasons), id: \.0) { r in
-                        HStack {
-                            Text(r.0).font(.footnote).frame(width: 64, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack { Text(r.0).font(.footnote).lineLimit(1); Spacer(); Text("\(r.1)").font(.footnote).foregroundStyle(Color.mute) }
                             ProgressView(value: Double(r.1), total: Double(max(1, s.int("total")))).tint(.red)
-                            Text("\(r.1)").font(.footnote).foregroundStyle(.secondary).frame(width: 26, alignment: .trailing)
                         }
                     }
                     HStack {
                         Button {
                             organize()
-                        } label: { Label(organizing ? "整理中…" : (s.int("todo") > 0 ? "一键整理（\(s.int("todo")) 道待分析）" : "一键整理"), systemImage: "folder.badge.gearshape") }
+                        } label: { Label(organizing ? "整理中…" : (s.int("todo") > 0 ? "一键整理 · \(s.int("todo"))" : "一键整理"), systemImage: "folder.badge.gearshape").lineLimit(1).fixedSize() }
                             .disabled(organizing)
-                        Spacer()
-                        Button { router.ask("分析这页的错题：我最薄弱的 3 个考点、典型错因，接下来该怎么练？给我练习按钮", study: true) } label: { Label("学习诊断", systemImage: "sparkles") }
+                        Button { router.ask("分析这页的错题：我最薄弱的 3 个考点、典型错因，接下来该怎么练？给我练习按钮", study: true) } label: { Label("学习诊断", systemImage: "sparkles").lineLimit(1).fixedSize() }
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(BrandButtonStyle()).controlSize(.small)
+                    .buttonStyle(BrandButtonStyle())
                     if let n = note { Text(n).font(.caption).foregroundStyle(.secondary) }
                 }
                 .padding(.vertical, 4)

@@ -95,15 +95,16 @@ struct MaxLogo: View {
 struct MaxBall: View {
     @EnvironmentObject private var router: Router
     @AppStorage("ballRight") private var right = true
-    @AppStorage("ballY") private var yFrac = 0.62
+    @AppStorage("ballY2") private var yFrac = 0.74
     @State private var pos: CGPoint?
     @State private var pressed = false
 
-    private let d: CGFloat = 56
+    private let d: CGFloat = 52
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
+            if router.tab != 3 { // 学习台自带「问 AI 助教」条，不重复放球
             let lo = geo.safeAreaInsets.top + d, hi = h - geo.safeAreaInsets.bottom - 110
             let rest = CGPoint(x: right ? w - d / 2 - 10 : d / 2 + 10, y: min(max(yFrac * h, lo), hi))
             MaxLogo(size: 32)
@@ -133,6 +134,7 @@ struct MaxBall: View {
                 .onTapGesture { Haptic.tap(); router.ask(study: true) }
                 .accessibilityLabel("问 Max")
                 .accessibilityAddTraits(.isButton)
+            }
         }
         .allowsHitTesting(true)
     }

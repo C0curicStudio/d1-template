@@ -144,9 +144,9 @@ struct QuizView: View {
             }
             if hs.count < 3 {
                 Button { Task { await hint(q) } } label: { Label(hinting ? "思考中…" : (hs.isEmpty ? "卡住了？给个提示" : "再给点提示"), systemImage: "lightbulb") }
-                    .font(.footnote).disabled(hinting)
+                    .buttonStyle(BrandButtonStyle()).disabled(hinting)
             } else {
-                Button { sheet = .chat(ChatSpec(title: "问 Max", study: false, ctx: ["q": q.int("id")], prompt: "这题我还是不会，再给我讲讲思路（先别说答案）")) } label: { Label("还是不会，问 Max", systemImage: "sparkles") }.font(.footnote)
+                Button { sheet = .chat(ChatSpec(title: "问 Max", study: false, ctx: ["q": q.int("id")], prompt: "这题我还是不会，再给我讲讲思路（先别说答案）")) } label: { Label("还是不会，问 Max", systemImage: "sparkles") }.buttonStyle(BrandButtonStyle())
             }
         }
     }
