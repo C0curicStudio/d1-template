@@ -43,7 +43,7 @@ struct PrinterSheet: View {
                                     Image(systemName: signal(d.rssi))
                                         .foregroundStyle(.secondary)
                                     if bt.connectedName == d.name && bt.ready {
-                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.brand)
                                     }
                                 }
                                 .contentShape(Rectangle())

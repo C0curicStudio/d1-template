@@ -179,7 +179,7 @@ struct PrintFlow: View {
                 Section {
                     Button { Task { await build() } } label: { Label(busy ? "排版中…" : "生成 A4 预览", systemImage: "doc.text.magnifyingglass") }
                         .disabled(selection.isEmpty || busy)
-                    if let e = error { Text(e).font(.footnote).foregroundStyle(.red) }
+                    if let e = error { Text(e).font(.footnote).foregroundStyle(Color.brand) }
                 } footer: { Text("公式在打印稿里用文字形式，带题图的题在网页版打印排版里更完整。") }
             }
             .navigationTitle("A4 排版打印")

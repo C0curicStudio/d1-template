@@ -23,10 +23,8 @@ struct Chip: View {
 
 func levelColor(_ level: String) -> Color {
     switch level {
-    case "薄弱": return .red
-    case "熟练": return .green
-    case "未练": return .gray
-    default: return Color.brand
+    case "薄弱": return Color.brand
+    default: return Color.mute
     }
 }
 
@@ -42,7 +40,7 @@ struct StatTile: View {
             Text(label).font(.caption).foregroundStyle(Color.mute).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 88, maxHeight: 88, alignment: .topLeading)
         .card(14)
     }
 }

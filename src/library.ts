@@ -42,9 +42,13 @@ const sha1 = async (s: string) => [...new Uint8Array(await crypto.subtle.digest(
 /** iOS App 的本地副本：全部题（题干、选项、答案、解析、归类）+ 一个内容指纹（ETag）。内容没变，App 带着指纹来问，只回 304 */
 export async function snapshot(db: D1Database, inm: string | null): Promise<{ status: 200 | 304; etag: string; body?: string }> {
 	const { results } = await db.prepare(`SELECT q.id, q.subject, q.category, q.topic, q.type, q.tag, q.stem, q.options, q.answer, q.explanation, q.status, q.created_at, ${STATE} state,
-		(SELECT COUNT(*) FROM attempts a WHERE a.question_id = q.id AND a.is_correct = 0) wrongs
+		(SELECT COUNT(*) FROM attempts a WHERE a.question_id = q.id AND a.is_correct = 0) wrongs,
+		(SELECT COUNT(*) FROM attempts a WHERE a.question_id = q.id) tries, q.source
 		FROM questions q ORDER BY q.id LIMIT 5000`).all<any>();
-	const items = results.map((r) => ({ ...r, options: arr(r.options), answer: arr(r.answer) }));
+	const items = results.map(({ tries, source, ...r }) => {
+		const locked = !tries && source !== "原错题"; // 没做过的题：本地副本里也不带答案和解析
+		return { ...r, options: arr(r.options), answer: locked ? [] : arr(r.answer), explanation: locked ? null : r.explanation, locked };
+	});
 	const body = JSON.stringify({ items, at: new Date().toISOString() }), tag = await sha1(JSON.stringify(items));
 	const etag = `"${tag}"`;
 	if (inm && inm.replace(/^W\//, "") === etag) return { status: 304, etag };

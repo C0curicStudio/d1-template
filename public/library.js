@@ -45,8 +45,11 @@
 			item.querySelector(".stem").textContent = d.stem.replace(/^[^·]*·/, "");
 			if (d.fig && typeof Fig !== "undefined") detail.append(Fig.view(d.fig, "small"));
 			if (d.options.length) detail.append(el("div", { className: "mute", textContent: d.options.join("\n"), style: "white-space:pre-wrap" }));
-			detail.append(el("div", { className: "ans", textContent: "正确答案：" + (d.answer.join(" / ") || "（无）") }));
-			if (d.explanation) detail.append(el("div", { className: "ans", textContent: "解析：" + d.explanation }));
+			if (d.locked) detail.append(el("div", { className: "ans", textContent: "还没做过这道题：做完才显示答案和解析" }));
+			else {
+				detail.append(el("div", { className: "ans", textContent: "正确答案：" + (d.answer.join(" / ") || "（无）") }));
+				if (d.explanation) detail.append(el("div", { className: "ans", textContent: "解析：" + d.explanation }));
+			}
 			detail.append(el("div", { className: "row", style: "margin-top:8px" },
 				el("a", { className: "btn", href: "/quiz?ids=" + it.id, textContent: "练这题", style: "text-decoration:none" }),
 				it.state !== "在用" ? el("button", { className: "btn", textContent: "放回练习", onclick: async (e) => { e.target.disabled = true; await api(`/api/question/${it.id}/restore`, { method: "POST" }).catch((x) => toast(x.message)); toast("已放回，今天的练习里能看到"); run(true); } }) : "",
