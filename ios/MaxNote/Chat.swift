@@ -114,9 +114,33 @@ struct ChatInputBar: View {
     @ObservedObject var model: ChatModel
     var focus: FocusState<Bool>.Binding
 
+    private func tag(_ title: String, _ icon: String, _ on: Binding<Bool>) -> some View {
+        Button { Haptic.select(); withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { on.wrappedValue.toggle() } } label: {
+            Label(title, systemImage: icon).font(.caption.weight(.semibold))
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .foregroundStyle(on.wrappedValue ? Color.white : Color.mute)
+                .background(on.wrappedValue ? Color.brand : Color.card, in: Capsule())
+                .overlay(Capsule().strokeBorder(on.wrappedValue ? Color.clear : Color.hairline, lineWidth: 0.6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                tag("深度思考", "brain", $model.deep)
+                tag("联网搜索", "globe", $model.web)
+                Spacer()
+            }
+            .padding(.leading, 4)
+            field
+        }
+    }
+
+    private var field: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField("问 Max…", text: $model.input, axis: .vertical)
+            TextField(model.deep && model.web ? "深度思考 + 联网搜索…" : model.deep ? "深度思考…" : model.web ? "联网搜索…" : "问 Max…", text: $model.input, axis: .vertical)
                 .lineLimit(1...5)
                 .focused(focus)
                 .accessibilityIdentifier("chatInput")
@@ -157,11 +181,7 @@ struct ChatView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Toggle(isOn: $model.deep) { Label("深度思考", systemImage: "brain") }
-                        Toggle(isOn: $model.web) { Label("联网搜索", systemImage: "globe") }
-                        Button(role: .destructive) { model.clear() } label: { Label("清空对话", systemImage: "trash") }
-                    } label: { Image(systemName: "slider.horizontal.3") }
+                    Button(role: .destructive) { model.clear() } label: { Image(systemName: "trash") }
                 }
             }
             .safeAreaInset(edge: .bottom) { ChatInputBar(model: model, focus: $focus).padding(.horizontal, 12).padding(.bottom, 6) }
@@ -295,11 +315,9 @@ struct MaxIsland: View {
                 }
                 Spacer()
                 Menu {
-                    Toggle(isOn: $model.deep) { Label("深度思考", systemImage: "brain") }
-                    Toggle(isOn: $model.web) { Label("联网搜索", systemImage: "globe") }
                     Button { showSettings = true } label: { Label("模型与设置", systemImage: "gearshape") }
                     Button(role: .destructive) { model.clear() } label: { Label("清空对话", systemImage: "trash") }
-                } label: { Image(systemName: "slider.horizontal.3").font(.body.weight(.semibold)).foregroundStyle(Color.mute).frame(width: 34, height: 34) }
+                } label: { Image(systemName: "ellipsis").font(.body.weight(.bold)).foregroundStyle(Color.mute).frame(width: 34, height: 34) }
                 Button { close() } label: { Image(systemName: "xmark").font(.body.weight(.bold)).foregroundStyle(Color.mute).frame(width: 34, height: 34) }
                     .accessibilityLabel("关闭")
             }
