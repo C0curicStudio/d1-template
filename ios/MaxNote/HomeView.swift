@@ -31,8 +31,14 @@ struct HomeView: View {
                     .buttonStyle(GlassButtonStyle(prominent: true))
 
                     if h.int("pending_grades") > 0 || h.int("pending_uploads") > 0 {
-                        Label("\(h.int("pending_grades")) 题等 Claude 批改 · \(h.int("pending_uploads")) 张照片待处理", systemImage: "hourglass")
-                            .font(.footnote).foregroundStyle(Color.mute).frame(maxWidth: .infinity, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("\(h.int("pending_grades")) 题等 Claude 批改 · \(h.int("pending_uploads")) 张照片待处理", systemImage: "hourglass").font(.footnote).foregroundStyle(Color.mute)
+                            HStack(spacing: 8) {
+                                if h.int("pending_grades") > 0 { Button("让 Claude 批改") { askClaude("用练习本：批改待批改的作答，写评语") }.buttonStyle(BrandButtonStyle()) }
+                                if h.int("pending_uploads") > 0 { Button("让 Claude 处理照片") { askClaude("用练习本：处理收件箱的照片，整理成错题并出同类题") }.buttonStyle(BrandButtonStyle()) }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     HStack(spacing: 8) {
@@ -68,6 +74,13 @@ struct HomeView: View {
             .fullScreenCover(isPresented: $shooting) { ImagePicker(camera: true) { img in Task { await uploadPhoto(img) } }.ignoresSafeArea() }
             .onReceive(NotificationCenter.default.publisher(for: .bankChanged)) { _ in Task { await feed.load() } }
         }
+    }
+
+    /// 打开 claude.ai 新对话并预填指令（同时复制好，App 里没带出来时粘贴即可）
+    private func askClaude(_ text: String) {
+        UIPasteboard.general.string = text
+        if let u = URL(string: "https://claude.ai/new?q=" + text.urlEnc) { UIApplication.shared.open(u) }
+        note = "指令已复制，在 Claude 里粘贴发送即可"
     }
 
     /// 拍照上传错题：存进照片收件箱，等 Claude 整理成错题并出同类题

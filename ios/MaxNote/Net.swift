@@ -125,9 +125,10 @@ final class API: ObservableObject {
     }
 
     /// 上传图片（multipart）：错题照片等
-    func upload(_ path: String, field: String = "files", images: [Data]) async throws -> J {
+    func upload(_ path: String, field: String = "files", fields: [String: String] = [:], images: [Data]) async throws -> J {
         let boundary = "B" + UUID().uuidString
         var body = Data()
+        for (k, v) in fields { body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(k)\"\r\n\r\n\(v)\r\n".utf8)) }
         for (i, d) in images.enumerated() {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field)\"; filename=\"p\(i).jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
             body.append(d)

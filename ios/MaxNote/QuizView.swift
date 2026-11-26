@@ -1,6 +1,7 @@
 import SwiftUI
+import PencilKit
 
-/// 做题：题目从服务器数据库拉取，选择 / 填空在原生界面里作答；带画板、手写、题图的题用网页版作答
+/// 做题：题目从服务器数据库拉取，所有题型都在原生界面作答：选择、填空、简答 / 计算 / 解答（打字）、画板（作图 / 函数 / 电路…）、拍照作答；题库没有同类题时 Max 现场出题
 struct QuizView: View {
     let spec: QuizSpec
     @Environment(\.dismiss) private var dismiss
@@ -20,16 +21,24 @@ struct QuizView: View {
     @EnvironmentObject private var router: Router
     @State private var confirmExit = false
     @State private var marked = Set<Int>()
+    @State private var boards: [Int: PKDrawing] = [:]    // 画板 / 手写答案：交卷时拍成图交给老师
+    @State private var scratches: [Int: PKDrawing] = [:] // 草稿纸：不交
+    @State private var photos: [Int: [UIImage]] = [:]    // 拍照作答
+    @State private var cover: Cover?
 
-    enum Phase { case loading, doing, submitting, result, empty, failed }
-
-    // 选择、填空、简答/计算/解答等文字作答的题都在原生界面做；只有要作图、或带题图的才用网页版
-    private let drawTags: Set<String> = ["作图", "函数", "电路", "光路", "受力"]
-    private func isNative(_ q: J) -> Bool {
-        if q.str("type") == "short" && drawTags.contains(q.str("tag")) { return false }
-        return ["single", "multi", "fill", "short"].contains(q.str("type"))
+    enum Cover: Identifiable {
+        case sketch(SketchSpec), camera(Int)
+        var id: String { switch self { case .sketch(let s): return "s-\(s.id)"; case .camera(let i): return "c-\(i)" } }
     }
-    private func answered(_ i: Int) -> Bool { !(picks[i] ?? []).isEmpty || !(texts[i] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+
+    enum Phase { case loading, doing, submitting, result, empty, failed, drill }
+
+    private func isNative(_ q: J) -> Bool { ["single", "multi", "fill", "short"].contains(q.str("type")) }
+    private func hasBoard(_ i: Int) -> Bool { !(boards[i]?.bounds.isEmpty ?? true) }
+    private func answered(_ i: Int) -> Bool {
+        !(picks[i] ?? []).isEmpty || !(texts[i] ?? "").trimmingCharacters(in: .whitespaces).isEmpty || hasBoard(i) || !(photos[i] ?? []).isEmpty
+    }
+    private var anyAnswer: Bool { qs.indices.contains { answered($0) } }
 
     var body: some View {
         NavigationStack {
@@ -37,6 +46,7 @@ struct QuizView: View {
                 WarmBackground()
                 switch phase {
                 case .loading: ProgressView("正在从数据库取题…")
+                case .drill: DrillView(topic: topicOfPath, like: nil) { sheet = .chat($0) }
                 case .empty: EmptyHint(icon: "checkmark.seal", text: "这里没有要做的题了 · Bravo !")
                 case .failed: failedView
                 case .doing: doing
@@ -49,7 +59,7 @@ struct QuizView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(phase == .result ? "完成" : "退出") {
-                        if phase == .doing && picks.values.contains(where: { !$0.isEmpty }) || phase == .doing && texts.values.contains(where: { !$0.isEmpty }) { confirmExit = true } else { dismiss() }
+                        if phase == .doing && anyAnswer { confirmExit = true } else { dismiss() }
                     }
                 }
             }
@@ -66,6 +76,14 @@ struct QuizView: View {
         }
         .interactiveDismissDisabled(phase == .doing)
         .sheet(item: $sheet) { SheetHost(kind: $0).environmentObject(router) }
+        .fullScreenCover(item: $cover) { c in
+            switch c {
+            case .sketch(let s):
+                SketchBoard(title: s.title, kind: s.kind, scratch: s.scratch, drawing: Binding(get: { (s.scratch ? scratches[s.idx] : boards[s.idx]) ?? PKDrawing() }, set: { if s.scratch { scratches[s.idx] = $0 } else { boards[s.idx] = $0 } }))
+            case .camera(let i):
+                ImagePicker(camera: true) { photos[i, default: []].append($0) }.ignoresSafeArea()
+            }
+        }
         .task { await load() }
     }
 
@@ -90,7 +108,7 @@ struct QuizView: View {
                     }
                     Text(plain(q.str("stem"))).font(.title3).lineSpacing(5)
                     if q.has("fig"), let fig = q["fig"], !(fig is NSNull) { FigView(fig: fig) }
-                    if isNative(q) { answerArea(q) } else { webOnly(q) }
+                    answerArea(q)
                     hintArea(q)
                 }
                 .padding(20)
@@ -124,7 +142,7 @@ struct QuizView: View {
             }
             .background(Color.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.6))
-            Text("提交后由 Max 批改；要画图或手写拍照的题，可在网页版作答。").font(.caption).foregroundStyle(Color.mute)
+            boardTools(q)
         } else {
             if type == "multi" { Text("多选").font(.caption).foregroundStyle(.secondary) }
             VStack(spacing: 10) {
@@ -155,6 +173,32 @@ struct QuizView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    /// 画板 / 手写 / 拍照：作图、函数、电路、光路、受力、证明的画板就是答案；其余题的「手写答案」也交给老师看图，「草稿纸」不交
+    @ViewBuilder private func boardTools(_ q: J) -> some View {
+        let tag = q.str("tag"), kind = BoardKind.forTag(tag), drawn = drawnTags.contains(tag)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Button { cover = .sketch(SketchSpec(idx: idx, title: drawn ? "画板作答" : "手写答案", kind: kind, scratch: false)) } label: { Label(drawn ? "画板作答" : "手写答案", systemImage: "pencil.tip.crop.circle").lineLimit(1) }
+                    .buttonStyle(BrandButtonStyle(filled: drawn))
+                if !drawn { Button { cover = .sketch(SketchSpec(idx: idx, title: "草稿纸", kind: kind, scratch: true)) } label: { Label("草稿纸", systemImage: "square.and.pencil").lineLimit(1) }.buttonStyle(BrandButtonStyle()) }
+                Button { cover = .camera(idx) } label: { Label("拍照作答", systemImage: "camera").lineLimit(1) }.buttonStyle(BrandButtonStyle())
+            }
+            if let d = boards[idx], !d.bounds.isEmpty, let img = BoardRender.image(d, kind: kind, full: false) {
+                Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 180).background(Color.white).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(alignment: .topTrailing) { Button { boards[idx] = nil } label: { Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(Color.mute) }.padding(6) }
+            }
+            if let ps = photos[idx], !ps.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack { ForEach(Array(ps.enumerated()), id: \.offset) { n, p in
+                        Image(uiImage: p).resizable().scaledToFill().frame(width: 84, height: 84).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(alignment: .topTrailing) { Button { photos[idx]?.remove(at: n) } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white, Color.mute) }.padding(3) }
+                    } }
+                }
+            }
+            Text(drawn ? "画出来的 / 拍的就是答案，交卷后由 Claude 看图批改；也可以再打字补充。" : "打字写的由 Max 批改；用了手写答案或拍照，则由 Claude 看图批改。草稿纸不会交。").font(.caption).foregroundStyle(Color.mute)
         }
     }
 
@@ -227,8 +271,8 @@ struct QuizView: View {
         do {
             qs = try await API.shared.list(spec.path)
             if qs.isEmpty {
-                // 「练这组」在题库里没有同类题：让 Max 现场出题（临时题不进题库）→ 网页版处理
-                if spec.path.contains("topic=") { phase = .empty } else { phase = .empty }
+                // 「练这组」在题库里没有同类题：让 Max 现场出题（临时题不进题库）
+                phase = topicOfPath.isEmpty ? .empty : .drill
                 return
             }
             idx = 0; started = [0: Date()]
@@ -255,15 +299,34 @@ struct QuizView: View {
     }
 
     private func submit() async {
-        var items: [[String: Any]] = []
-        for (i, q) in qs.enumerated() where isNative(q) && answered(i) {
-            let type = q.str("type")
-            let ans: Any = (type == "fill" || type == "short") ? (texts[i] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) : Array(picks[i] ?? []).sorted()
-            items.append(["question_id": q.int("id"), "answer": ans, "time_spent_sec": Int(Date().timeIntervalSince(started[i] ?? Date()))])
-        }
-        guard !items.isEmpty else { error = "还没有作答的题"; Haptic.bad(); return }
+        guard anyAnswer else { error = "还没有作答的题"; Haptic.bad(); return }
         phase = .submitting
         do {
+            var items: [[String: Any]] = []
+            for (i, q) in qs.enumerated() where isNative(q) && answered(i) {
+                let type = q.str("type"), tag = q.str("tag")
+                let ans: Any = (type == "fill" || type == "short") ? (texts[i] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) : Array(picks[i] ?? []).sorted()
+                var keys: [String] = []
+                // 拍照作答：直接传
+                for p in photos[i] ?? [] {
+                    if let d = ImageUtil.jpeg(p, maxSide: 1280) { keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", images: [d]).str("key")) }
+                }
+                // 画板 / 手写答案：整张图自己看（view），裁出来的小图交给 Claude（board）
+                var hand = false
+                if let d = boards[i], !d.bounds.isEmpty {
+                    let kind = BoardKind.forTag(tag)
+                    hand = true
+                    if let full = BoardRender.image(d, kind: kind, full: true), let fd = ImageUtil.jpeg(full, maxSide: 1280, maxBytes: 900_000) {
+                        keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", fields: ["kind": "view"], images: [fd]).str("key"))
+                    }
+                    if let small = BoardRender.image(d, kind: kind, full: false), let sd = ImageUtil.jpeg(small, maxSide: 1024, maxBytes: 600_000) {
+                        keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", fields: ["kind": "board"], images: [sd]).str("key"))
+                    }
+                }
+                var it: [String: Any] = ["question_id": q.int("id"), "answer": ans, "photo_keys": keys, "time_spent_sec": Int(Date().timeIntervalSince(started[i] ?? Date()))]
+                if hand { it["hand"] = true; it["work"] = "[手写答案] 见附图" }
+                items.append(it)
+            }
             let r = try await API.shared.obj("/api/submit", method: "POST", json: ["items": items])
             attemptIds = (r["attempt_ids"] as? [Int]) ?? []
             Haptic.ok()
@@ -273,6 +336,8 @@ struct QuizView: View {
             await pollPending()
         } catch { self.error = error.localizedDescription; phase = .doing; Haptic.bad() }
     }
+
+    private var topicOfPath: String { URLComponents(string: spec.path)?.queryItems?.first { $0.name == "topic" }?.value ?? "" }
 
     private func refreshResults() async {
         guard !attemptIds.isEmpty else { return }
@@ -301,7 +366,7 @@ struct ResultCard: View {
             HStack {
                 Image(systemName: pending ? "hourglass" : ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .foregroundStyle(pending ? Color.mute : ok ? Color.ink : Color.brand).font(.title3)
-                Text(pending ? "批改中" : ok ? "答对了" : "答错了").font(.headline)
+                Text(pending ? (r.str("grader").isEmpty ? "等 Claude 批改" : "Max 批改中") : ok ? "答对了" : "答错了").font(.headline)
                 Spacer()
                 if !r.str("topic").isEmpty { Chip(text: r.str("topic"), tint: .secondary) }
             }
@@ -314,6 +379,7 @@ struct ResultCard: View {
             HStack {
                 Button("问 Max") { sheet = .chat(ChatSpec(title: "问 Max", study: false, ctx: ["explain": r.int("id")], prompt: "讲讲这道题")) }.buttonStyle(BrandButtonStyle())
                 if expl == nil { Button("解析") { Task { await loadExpl() } }.buttonStyle(BrandButtonStyle()) }
+                if r.int("prev") != 0 { Button("和上次比") { sheet = .chat(ChatSpec(title: "问 Max", study: false, ctx: ["explain": r.int("id"), "cmp": true], prompt: "这次和上次比怎么样？")) }.buttonStyle(BrandButtonStyle()) }
             }
             .controlSize(.small)
         }
