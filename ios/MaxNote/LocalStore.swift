@@ -32,6 +32,7 @@ final class LocalStore {
         run("CREATE TABLE IF NOT EXISTS questions(id INTEGER PRIMARY KEY, subject TEXT, category TEXT, topic TEXT, type TEXT, tag TEXT, stem TEXT, options TEXT, answer TEXT, explanation TEXT, state TEXT, wrongs INTEGER, created_at TEXT)")
         run("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
         run("CREATE TABLE IF NOT EXISTS cache(k TEXT PRIMARY KEY, v BLOB, at REAL)")
+        run("CREATE TABLE IF NOT EXISTS outbox(id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT, at REAL)")
     }
 
     @discardableResult
@@ -82,6 +83,42 @@ final class LocalStore {
     }
 
     func clearCache() { queue.sync { _ = run("DELETE FROM cache") } }
+
+    /// 已缓存的接口结果：个数和占用字节
+    func cacheStats() -> (count: Int, bytes: Int) {
+        queue.sync {
+            guard let db = db else { return (0, 0) }
+            var st: OpaquePointer?
+            defer { sqlite3_finalize(st) }
+            guard sqlite3_prepare_v2(db, "SELECT COUNT(*), COALESCE(SUM(LENGTH(v)), 0) FROM cache", -1, &st, nil) == SQLITE_OK, sqlite3_step(st) == SQLITE_ROW else { return (0, 0) }
+            return (Int(sqlite3_column_int(st, 0)), Int(sqlite3_column_int64(st, 1)))
+        }
+    }
+
+    // MARK: 待提交的答案（没网时存在这里，联网后自动补交）
+    func outboxAdd(_ body: String) {
+        queue.sync {
+            guard let db = db else { return }
+            var st: OpaquePointer?
+            defer { sqlite3_finalize(st) }
+            guard sqlite3_prepare_v2(db, "INSERT INTO outbox(body, at) VALUES(?, ?)", -1, &st, nil) == SQLITE_OK else { return }
+            sqlite3_bind_text(st, 1, body, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(st, 2, Date().timeIntervalSince1970)
+            sqlite3_step(st)
+        }
+    }
+    func outboxList() -> [(id: Int, body: String)] {
+        queue.sync {
+            guard let db = db else { return [] }
+            var st: OpaquePointer?
+            defer { sqlite3_finalize(st) }
+            guard sqlite3_prepare_v2(db, "SELECT id, body FROM outbox ORDER BY id", -1, &st, nil) == SQLITE_OK else { return [] }
+            var out: [(Int, String)] = []
+            while sqlite3_step(st) == SQLITE_ROW { out.append((Int(sqlite3_column_int(st, 0)), text(st, 1))) }
+            return out
+        }
+    }
+    func outboxDelete(_ id: Int) { queue.sync { _ = run("DELETE FROM outbox WHERE id = \(id)") } }
 
     func meta(_ k: String) -> String? {
         queue.sync {

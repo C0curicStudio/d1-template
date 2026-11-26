@@ -25,6 +25,8 @@ struct QuizView: View {
     @State private var scratches: [Int: PKDrawing] = [:] // 草稿纸：不交
     @State private var photos: [Int: [UIImage]] = [:]    // 拍照作答
     @State private var cover: Cover?
+    @State private var fromCache = false
+    @State private var queued = false
 
     enum Cover: Identifiable {
         case sketch(SketchSpec), camera(Int)
@@ -49,7 +51,7 @@ struct QuizView: View {
                 case .drill: DrillView(topic: topicOfPath, like: nil) { sheet = .chat($0) }
                 case .empty: EmptyHint(icon: "checkmark.seal", text: "这里没有要做的题了 · Bravo !")
                 case .failed: failedView
-                case .doing: doing
+                case .doing: doing.overlay(alignment: .top) { if fromCache { Label("离线：使用本机缓存的题", systemImage: "wifi.slash").font(.caption).foregroundStyle(Color.mute).padding(.top, 2) } }
                 case .submitting: ProgressView("交卷中…")
                 case .result: resultView
                 }
@@ -258,6 +260,7 @@ struct QuizView: View {
                     VStack { Text("\(right) / \(results.count)").font(.system(size: 30, weight: .bold, design: .rounded)); Text(wait > 0 ? "\(wait) 题批改中" : "答对").font(.caption).foregroundStyle(.secondary) }
                 }
                 .frame(width: 130, height: 130).padding(.top, 10)
+                if queued { Label("没有网络：答案已存在本机，联网后会自动交卷并批改", systemImage: "icloud.and.arrow.up").font(.subheadline).foregroundStyle(Color.mute).card() }
                 if wait > 0 && polling { ProgressView("Max 批改中…").font(.footnote) }
                 ForEach(Array(results.enumerated()), id: \.offset) { _, r in ResultCard(r: r, sheet: $sheet) }
             }
@@ -269,7 +272,12 @@ struct QuizView: View {
     private func load() async {
         phase = .loading; error = nil
         do {
-            qs = try await API.shared.list(spec.path)
+            do { qs = (try await API.shared.fresh(spec.path)) as? [J] ?? [] }
+            catch NetError.offline {
+                // 没网：用本机缓存的题（后台自动缓存过的今日题 / 各科题 / 指定题）
+                guard let c = API.shared.cached(spec.path) as? [J], !c.isEmpty else { throw NetError.offline }
+                qs = c; fromCache = true
+            }
             if qs.isEmpty {
                 // 「练这组」在题库里没有同类题：让 Max 现场出题（临时题不进题库）
                 phase = topicOfPath.isEmpty ? .empty : .drill
@@ -301,12 +309,14 @@ struct QuizView: View {
     private func submit() async {
         guard anyAnswer else { error = "还没有作答的题"; Haptic.bad(); return }
         phase = .submitting
+        var items: [[String: Any]] = []
+        var needsPhotos = false
         do {
-            var items: [[String: Any]] = []
             for (i, q) in qs.enumerated() where isNative(q) && answered(i) {
                 let type = q.str("type"), tag = q.str("tag")
                 let ans: Any = (type == "fill" || type == "short") ? (texts[i] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) : Array(picks[i] ?? []).sorted()
                 var keys: [String] = []
+                if !(photos[i] ?? []).isEmpty || hasBoard(i) { needsPhotos = true }
                 // 拍照作答：直接传
                 for p in photos[i] ?? [] {
                     if let d = ImageUtil.jpeg(p, maxSide: 1280) { keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", images: [d]).str("key")) }
@@ -334,6 +344,12 @@ struct QuizView: View {
             withAnimation { phase = .result }
             NotificationCenter.default.post(name: .bankChanged, object: nil)
             await pollPending()
+        } catch NetError.offline where !needsPhotos && !items.isEmpty {
+            // 没网：答案先存在本机，联网后自动补交（带图的答案要联网才能交）
+            if let d = try? JSONSerialization.data(withJSONObject: ["items": items]), let s = String(data: d, encoding: .utf8) { LocalStore.shared.outboxAdd(s) }
+            Prefetcher.shared.refreshPending()
+            queued = true; Haptic.ok()
+            withAnimation { phase = .result }
         } catch { self.error = error.localizedDescription; phase = .doing; Haptic.bad() }
     }
 

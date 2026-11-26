@@ -15,6 +15,20 @@ struct PrintOptions {
     var answers = 2         // 0 不带 1 题后 2 末页答案
     var lines = 4           // 解答题留白行数
     var nameLine = true
+
+    /// 上次用的版式记在本机
+    static func load() -> PrintOptions {
+        let u = UserDefaults.standard
+        var o = PrintOptions()
+        guard u.object(forKey: "po.cols") != nil else { return o }
+        o.title = u.string(forKey: "po.title") ?? o.title; o.cols = u.integer(forKey: "po.cols"); o.size = u.integer(forKey: "po.size")
+        o.answers = u.integer(forKey: "po.answers"); o.lines = u.integer(forKey: "po.lines"); o.nameLine = u.bool(forKey: "po.name")
+        return o
+    }
+    func save() {
+        let u = UserDefaults.standard
+        u.set(title, forKey: "po.title"); u.set(cols, forKey: "po.cols"); u.set(size, forKey: "po.size"); u.set(answers, forKey: "po.answers"); u.set(lines, forKey: "po.lines"); u.set(nameLine, forKey: "po.name")
+    }
 }
 
 /// A4 排版：把选好的题排成真正的 A4 页面（PDF），再交给 AirPrint / 蓝牙打印机 / 分享
@@ -133,7 +147,7 @@ struct PrintFlow: View {
     @StateObject private var wrong = Feed("/api/wrong?tab=active")
     @StateObject private var bt = BTPrinter()
     @State private var selection = Set<Int>()
-    @State private var opt = PrintOptions()
+    @State private var opt = PrintOptions.load()
     @State private var doc: PDFDocument?
     @State private var busy = false
     @State private var error: String?
@@ -210,6 +224,7 @@ struct PrintFlow: View {
             .task { selection = Set(preselect); await bank.load(); await wrong.load() }
             .task(id: signature) {
                 // 选题 / 版式一变，预览自动重排（稍等一下，避免连点时反复排版）
+                opt.save()
                 guard !selection.isEmpty else { doc = nil; return }
                 try? await Task.sleep(nanoseconds: 450_000_000)
                 if !Task.isCancelled { await build() }

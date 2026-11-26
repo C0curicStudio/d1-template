@@ -15,6 +15,11 @@ final class ChatModel: ObservableObject {
     @Published var pending: PendingAlert?
     @Published var attaching = false
     var spec = ChatSpec()
+
+    init() {
+        let ud = UserDefaults.standard
+        deep = ud.bool(forKey: "maxDeep"); web = ud.bool(forKey: "maxWeb")   // 设置里可以设成默认开着
+    }
     private var task: Task<Void, Never>?
 
     func send(_ raw: String) {
@@ -231,6 +236,8 @@ struct MaxIsland: View {
     @StateObject private var model = ChatModel()
     @AppStorage("ballRight") private var right = true
     @AppStorage("ballY2") private var yFrac = 0.74
+    @AppStorage("ballShow") private var ballShow = true
+    @AppStorage("ballFade") private var ballFade = true
     @State private var drag: CGPoint?
     @State private var pressed = false
     @State private var idle = false
@@ -267,12 +274,12 @@ struct MaxIsland: View {
                             .glassMorph("max", ns, radius: 30, interactive: false)
                             .position(x: px, y: py)
                             .transition(.scale(scale: 0.12, anchor: anchor).combined(with: .opacity))
-                    } else {
+                    } else if ballShow {
                         ball
                             .glassMorph("max", ns, radius: nil, interactive: true)
                             .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
                             .scaleEffect(pressed ? 1.14 : 1)
-                            .opacity(drag == nil && !pressed && idle ? 0.4 : 1)
+                            .opacity(drag == nil && !pressed && idle && ballFade ? 0.4 : 1)
                             .position(drag ?? rest)
                             .animation(.spring(response: 0.45, dampingFraction: 0.72), value: drag == nil)
                             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: pressed)

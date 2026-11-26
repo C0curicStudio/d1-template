@@ -64,6 +64,7 @@ struct HomeView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        Button { router.ask(study: true) } label: { Label("问 Max", systemImage: "sparkles") }
                         Button { router.print(ids: []) } label: { Label("A4 排版打印", systemImage: "printer") }
                         Button { router.sheet = .settings } label: { Label("设置", systemImage: "gearshape") }
                     } label: { Image(systemName: "ellipsis.circle") }

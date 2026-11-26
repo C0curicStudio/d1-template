@@ -24,13 +24,13 @@ struct RootView: View {
         .task {
             await api.bootstrap()
             booted = true
-            if api.authed == true { sync.refresh(force: true) }
+            if api.authed == true { sync.refresh(force: true); await Prefetcher.shared.flush(); await Prefetcher.shared.run() }
         }
         .onChange(of: phase) { p in
-            if p == .active, api.authed == true { sync.refresh() }
+            if p == .active, api.authed == true { sync.refresh(); Task { await Prefetcher.shared.flush(); await Prefetcher.shared.run() } }
         }
         .onChange(of: api.authed) { a in
-            if a == true { sync.refresh(force: true) }
+            if a == true { sync.refresh(force: true); Task { await Prefetcher.shared.run(force: true) } }
         }
     }
 }
