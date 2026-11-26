@@ -111,8 +111,11 @@ func plain(_ input: String) -> String {
     var t = input.replacingOccurrences(of: "$", with: "")
     // 化学式 \ce{H2O} \ce{2KMnO4 ->[\Delta] K2MnO4}
     t = rx(t, "\\\\ce\\{([^{}]*)\\}") { g in
-        var c = g[1].replacingOccurrences(of: "<=>", with: " ⇌ ").replacingOccurrences(of: "->", with: " → ").replacingOccurrences(of: "\\Delta", with: "△")
-        c = rx(c, "\\[([^\\]]*)\\]") { $0[1] }
+        var c = g[1].replacingOccurrences(of: "<=>", with: " ⇌ ").replacingOccurrences(of: "\\Delta", with: "△")
+        c = rx(c, "->\\[([^\\]]*)\\]") { " —\($0[1])→ " }   // 反应条件写在箭头上：—MnO₂→
+        c = c.replacingOccurrences(of: "->", with: " → ")
+        c = rx(c, "\\s*\\^\\s*$") { _ in "↑" }               // 末尾的 ^ 是气体符号
+        c = rx(c, "\\s+v\\s*$") { _ in "↓" }                    // 末尾的 v 是沉淀符号
         c = rx(c, "([A-Za-z\\)])(\\d+)") { $0[1] + mapChars($0[2], SUB, "_") }
         return c
     }

@@ -62,7 +62,9 @@ final class Router: ObservableObject {
 struct SheetHost: View {
     let kind: SheetKind
     @EnvironmentObject private var router: Router
-    var body: some View {
+    var body: some View { content.tint(Color.brand) }
+
+    @ViewBuilder private var content: some View {
         switch kind {
         case .chat(let s): ChatView(spec: s).environmentObject(router)
         case .lesson(let s): LessonView(spec: s).environmentObject(router)

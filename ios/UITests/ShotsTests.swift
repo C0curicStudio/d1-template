@@ -25,9 +25,8 @@ final class ShotsTests: XCTestCase {
     func top(_ app: XCUIApplication) { for _ in 0..<3 { app.swipeDown() } }
 
     func run(_ mode: String) {
-        XCUIDevice.shared.appearance = mode == "dark" ? .dark : .light
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo"] + (mode == "dark" ? ["-AppleInterfaceStyle", "Dark"] : ["-AppleInterfaceStyle", "Light"])
         app.launch()
         sleep(3)
         let p = mode + "-"
@@ -61,7 +60,7 @@ final class ShotsTests: XCTestCase {
         top(app)
         if tap(app.tabBars.buttons["学习台"]) {
             sleep(1)
-            if tap(app.buttons["学"].firstMatch, 3) { sleep(4); shot(p + "30-lesson"); tap(app.buttons["完成"], 2) }
+            if tap(app.buttons["学"].firstMatch, 3) || tap(any(app, "学"), 3) { sleep(4); shot(p + "30-lesson"); tap(app.buttons["完成"], 2) }
         }
 
         // 悬浮球 → 聊天（键盘要自动弹出）
@@ -84,6 +83,7 @@ final class ShotsTests: XCTestCase {
         sleep(1)
         if tap(begins(app, "今日练习"), 3) {
             sleep(3); shot(p + "50-quiz-1")
+            if tap(begins(app, "卡住了"), 2) { sleep(2); shot(p + "50b-quiz-hint") }
             tap(begins(app, "B."), 2); sleep(1); shot(p + "51-quiz-picked")
             tap(app.buttons["下一题"], 2); sleep(1); shot(p + "52-quiz-2")
             tap(begins(app, "A."), 1); tap(begins(app, "B."), 1)
@@ -106,9 +106,9 @@ final class ShotsTests: XCTestCase {
         if tap(app.navigationBars.buttons.firstMatch, 3) {
             if tap(any(app, "A4 排版打印"), 2) {
                 sleep(2); shot(p + "70-print")
-                if tap(begins(app, "选题"), 2) { sleep(1); tap(app.buttons["全选"], 2); shot(p + "71-print-pick") }
+                if tap(begins(app, "选题（已选"), 2) { sleep(1); tap(app.buttons["全选"], 2); shot(p + "71-print-pick"); tap(begins(app, "选题（已选"), 2) }
                 top(app)
-                if tap(begins(app, "生成 A4 预览"), 2) { sleep(3); shot(p + "72-print-preview") }
+                if tap(begins(app, "生成 A4 预览"), 2) { sleep(4); shot(p + "72-print-preview") }
             }
         }
         app.terminate()

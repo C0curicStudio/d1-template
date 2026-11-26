@@ -42,7 +42,7 @@ struct MainTabs: View {
         tabs
             .tint(Color.brand)
             .overlay { MaxBall() }
-            .fullScreenCover(item: $router.quiz) { QuizView(spec: $0).environmentObject(router) }
+            .fullScreenCover(item: $router.quiz) { QuizView(spec: $0).environmentObject(router).tint(Color.brand) }
             .sheet(item: $router.sheet) { SheetHost(kind: $0).environmentObject(router) }
     }
 
