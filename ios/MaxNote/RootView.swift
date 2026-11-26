@@ -41,7 +41,7 @@ struct MainTabs: View {
     var body: some View {
         tabs
             .tint(Color.brand)
-            .overlay { MaxBall() }
+            .overlay { MaxIsland() }
             .fullScreenCover(item: $router.quiz) { QuizView(spec: $0).environmentObject(router).tint(Color.brand) }
             .sheet(item: $router.sheet) { SheetHost(kind: $0).environmentObject(router) }
     }
@@ -103,7 +103,7 @@ struct LoginView: View {
                         .padding(14)
                         .glassCard(cornerRadius: 16)
                     if let e = error {
-                        Text(e).font(.footnote).foregroundStyle(.red).transition(.opacity.combined(with: .move(edge: .top)))
+                        Text(e).font(.footnote).foregroundStyle(Color.brand).transition(.opacity.combined(with: .move(edge: .top)))
                     }
                     Button(action: go) {
                         Text(busy ? "登录中…" : "进入")

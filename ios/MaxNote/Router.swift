@@ -33,6 +33,7 @@ final class Router: ObservableObject {
     @Published var tab = 0
     @Published var quiz: QuizSpec?
     @Published var sheet: SheetKind?
+    @Published var island: ChatSpec?   // 悬浮球展开出来的 Max 面板
 
     var chat: ChatSpec? { get { if case .chat(let s) = sheet { return s }; return nil } set { sheet = newValue.map { .chat($0) } } }
     var lesson: LessonSpec? { get { if case .lesson(let s) = sheet { return s }; return nil } set { sheet = newValue.map { .lesson($0) } } }
@@ -47,7 +48,7 @@ final class Router: ObservableObject {
     func practice(topic: String) { quiz = QuizSpec(title: topic.replacingOccurrences(of: "/", with: " › "), path: "/api/practice?topic=" + topic.urlEnc) }
     func print(ids: [Int]) { sheet = .print(IdsSpec(ids: ids)) }
     func ask(_ prompt: String? = nil, ctx: J = [:], study: Bool = true, topic: String = "") {
-        sheet = .chat(ChatSpec(title: "问 Max", study: study, topic: topic, ctx: ctx, prompt: prompt))
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) { island = ChatSpec(title: "问 Max", study: study, topic: topic, ctx: ctx, prompt: prompt) }
     }
     func open(_ a: MaxAction) {
         switch a.kind {

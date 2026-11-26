@@ -126,7 +126,7 @@ struct BankView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     if !q.str("tag").isEmpty { Chip(text: q.str("tag"), tint: .secondary) }
-                    if mode == .wrong, !q.str("max_reason").isEmpty { Chip(text: "错因：" + q.str("max_reason"), tint: .red) }
+                    if mode == .wrong, !q.str("max_reason").isEmpty { Chip(text: "错因：" + q.str("max_reason"), tint: Color.brand) }
                 }
                 Text(plain(q.str("stem").replacingOccurrences(of: "^[^·]*·", with: "", options: .regularExpression))).font(.body).lineLimit(3)
             }
@@ -151,11 +151,11 @@ struct BankView: View {
     }
 
     private func state(_ q: J) -> (String, Color) {
-        if q.int("pending") > 0 { return ("待批改", .orange) }
-        if mode == .wrong { return tab == "mastered" ? ("已改对", .green) : q.int("last") == 1 ? ("重做已对", .green) : ("待重做", .red) }
+        if q.int("pending") > 0 { return ("待批改", Color.mute) }
+        if mode == .wrong { return tab == "mastered" ? ("已改对", Color.mute) : q.int("last") == 1 ? ("重做已对", Color.mute) : ("待重做", Color.brand) }
         if scope == 1, !q.str("state").isEmpty { return (q.str("state"), q.str("state") == "在用" ? Color.brand : .secondary) }
         if !q.str("due").isEmpty && q.str("due") > today { return ("\(Int(q.str("due").dropFirst(5).prefix(2)) ?? 0)月\(Int(q.str("due").suffix(2)) ?? 0)日做", .secondary) }
-        return q.int("tries") == 0 ? ("未做", .blue) : q.int("last") == 1 ? ("做对", .green) : ("做错", .red)
+        return q.int("tries") == 0 ? ("未做", Color.mute) : q.int("last") == 1 ? ("做对", Color.mute) : ("做错", Color.brand)
     }
 
     private func reload() async {
@@ -202,7 +202,7 @@ struct WrongSummary: View {
                     ForEach(Array(reasons), id: \.0) { r in
                         VStack(alignment: .leading, spacing: 3) {
                             HStack { Text(r.0).font(.footnote).lineLimit(1); Spacer(); Text("\(r.1)").font(.footnote).foregroundStyle(Color.mute) }
-                            ProgressView(value: Double(r.1), total: Double(max(1, s.int("total")))).tint(.red)
+                            ProgressView(value: Double(r.1), total: Double(max(1, s.int("total")))).tint(Color.brand)
                         }
                     }
                     HStack {
@@ -260,19 +260,35 @@ struct QuestionDetail: View {
         List {
             if feed.offline { Section { OfflineBadge() } }
             Section {
-                HStack(spacing: 6) {
-                    Chip(text: q.str("subject"))
-                    if !q.str("topic").isEmpty { Chip(text: q.str("topic"), tint: .secondary) }
-                    if !q.str("tag").isEmpty { Chip(text: q.str("tag"), tint: .secondary) }
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 6) {
+                        Chip(text: q.str("subject"))
+                        if !q.str("topic").isEmpty { Chip(text: q.str("topic"), tint: Color.mute) }
+                        if !q.str("tag").isEmpty { Chip(text: q.str("tag"), tint: Color.mute) }
+                    }
+                    Text(plain(q.str("stem").replacingOccurrences(of: "^[^·]*·", with: "", options: .regularExpression))).font(.title3).foregroundStyle(Color.ink)
+                    ForEach(q.strs("options"), id: \.self) { Text(plain($0)).foregroundStyle(Color.ink) }
+                    if q.has("fig") && !(q["fig"] is NSNull) {
+                        Button { router.web = WebSpec(path: "/library", title: "题图") } label: { Label("这题带图，在网页版查看", systemImage: "photo") }.font(.footnote)
+                    }
                 }
-                Text(plain(q.str("stem").replacingOccurrences(of: "^[^·]*·", with: "", options: .regularExpression))).font(.title3)
-                ForEach(q.strs("options"), id: \.self) { Text(plain($0)) }
-                if q.has("fig") && !(q["fig"] is NSNull) {
-                    Button { router.web = WebSpec(path: "/library", title: "题图") } label: { Label("这题带图，在网页版查看", systemImage: "photo") }.font(.footnote)
-                }
+                .padding(.vertical, 4)
+                .listRowBackground(Color.card)
             }
-            Section("正确答案") { Text(plain(q.strs("answer").joined(separator: " / ")).isEmpty ? "（无）" : plain(q.strs("answer").joined(separator: " / "))).font(.headline) }
-            if !q.str("explanation").isEmpty { Section("解析") { Text(plain(q.str("explanation"))) } }
+            if q.bool("locked") {
+                // 没做过的题：做完才给答案和解析
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("还没做过这道题：做完才显示答案和解析", systemImage: "lock").font(.subheadline).foregroundStyle(Color.mute)
+                        Button("练这题") { router.practice(ids: [id]) }.buttonStyle(BrandButtonStyle(filled: true))
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(Color.card)
+                }
+            } else {
+                Section("正确答案") { Text(plain(q.strs("answer").joined(separator: " / ")).isEmpty ? "（无）" : plain(q.strs("answer").joined(separator: " / "))).font(.headline).foregroundStyle(Color.ink).listRowBackground(Color.card) }
+                if !q.str("explanation").isEmpty { Section("解析") { Text(plain(q.str("explanation"))).foregroundStyle(Color.ink).listRowBackground(Color.card) } }
+            }
             let attempts = q.arr("attempts")
             if !attempts.isEmpty {
                 Section("做题记录") {
@@ -280,14 +296,15 @@ struct QuestionDetail: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Image(systemName: a.str("status") == "待批改" ? "hourglass" : a.int("is_correct") == 1 ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundStyle(a.str("status") == "待批改" ? .orange : a.int("is_correct") == 1 ? .green : .red)
+                                    .foregroundStyle(a.str("status") == "待批改" ? Color.mute : a.int("is_correct") == 1 ? Color.ink : Color.brand)
                                 Text(a.str("answer_text").isEmpty ? "（空）" : plain(a.str("answer_text"))).lineLimit(2)
                                 Spacer()
                                 Text(String(a.str("created_at").prefix(10))).font(.caption).foregroundStyle(.secondary)
                             }
-                            if !a.str("error_reason").isEmpty { Text("错因：" + a.str("error_reason")).font(.caption).foregroundStyle(.red) }
+                            if !a.str("error_reason").isEmpty { Text("错因：" + a.str("error_reason")).font(.caption).foregroundStyle(Color.brand) }
                             if !a.str("comment").isEmpty { Text(a.str("comment")).font(.caption).foregroundStyle(.secondary) }
                         }
+                        .listRowBackground(Color.card)
                     }
                 }
             }

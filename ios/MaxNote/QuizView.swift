@@ -139,7 +139,7 @@ struct QuizView: View {
         let hs = hints[idx] ?? []
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(hs.enumerated()), id: \.offset) { i, h in
-                Label { Text(plain(h)).font(.subheadline) } icon: { Image(systemName: "lightbulb.fill").foregroundStyle(.yellow) }
+                Label { Text(plain(h)).font(.subheadline) } icon: { Image(systemName: "lightbulb.fill").foregroundStyle(Color.brand) }
                     .padding(12).frame(maxWidth: .infinity, alignment: .leading).glassCard(cornerRadius: 14)
             }
             if hs.count < 3 {
@@ -261,16 +261,16 @@ struct ResultCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: pending ? "hourglass" : ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(pending ? .orange : ok ? .green : .red).font(.title3)
+                    .foregroundStyle(pending ? Color.mute : ok ? Color.ink : Color.brand).font(.title3)
                 Text(pending ? "批改中" : ok ? "答对了" : "答错了").font(.headline)
                 Spacer()
                 if !r.str("topic").isEmpty { Chip(text: r.str("topic"), tint: .secondary) }
             }
             Text(plain(r.str("stem").replacingOccurrences(of: "^[^·]*·", with: "", options: .regularExpression))).font(.subheadline).lineLimit(3)
             Text("你的答案：" + (r.str("answer_text").isEmpty ? "（空）" : plain(r.str("answer_text")))).font(.subheadline)
-            if !ok && !pending { Text("正确答案：" + plain(r.strs("answer").joined(separator: " / "))).font(.subheadline.weight(.semibold)).foregroundStyle(.green) }
+            if !ok && !pending { Text("正确答案：" + plain(r.strs("answer").joined(separator: " / "))).font(.subheadline.weight(.semibold)).foregroundStyle(Color.ink) }
             if !r.str("comment").isEmpty { Text(r.str("comment")).font(.footnote).foregroundStyle(.secondary) }
-            if !r.str("error_reason").isEmpty { Chip(text: "错因：" + r.str("error_reason"), tint: .red) }
+            if !r.str("error_reason").isEmpty { Chip(text: "错因：" + r.str("error_reason"), tint: Color.brand) }
             if let e = expl { Text("解析：" + plain(e)).font(.footnote) }
             HStack {
                 Button("问 Max") { sheet = .chat(ChatSpec(title: "问 Max", study: false, ctx: ["explain": r.int("id")], prompt: "讲讲这道题")) }.buttonStyle(BrandButtonStyle())

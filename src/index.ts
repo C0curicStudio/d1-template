@@ -423,11 +423,13 @@ app.get("/api/question/:id", async (c) => {
 		)
 		.bind(id)
 		.all<Record<string, any>>();
+	const locked = results.length === 0 && q.source !== "原错题"; // 还没做过的题不给答案和解析（做完才看）
 	return c.json({
 		...clientQ(q),
 		stem: label(q) + q.stem, // 错题本展开：仍是「科目·题干」
-		answer: parse<string[]>(q.answer, []),
-		explanation: q.explanation,
+		locked,
+		answer: locked ? [] : parse<string[]>(q.answer, []),
+		explanation: locked ? null : q.explanation,
 		attempts: results.map((r) => ({ ...r, error_reason: r.is_correct === 0 ? q.max_reason || r.error_reason : r.error_reason, photos: r.photo_key ? String(r.photo_key).split(",") : [], photo_key: undefined })),
 	});
 });

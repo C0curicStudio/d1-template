@@ -65,7 +65,7 @@ struct HomeView: View {
             let topics = Array(brief.arr("topics").prefix(3))
             if !topics.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack { ForEach(Array(topics.enumerated()), id: \.offset) { _, t in Chip(text: "\(t.str("subject")) · \(t.str("topic"))", tint: .red) } }
+                    HStack { ForEach(Array(topics.enumerated()), id: \.offset) { _, t in Chip(text: "\(t.str("subject")) · \(t.str("topic"))", tint: Color.brand) } }
                 }
             }
             let order = (brief["order"] as? [Int]) ?? [], weak = (brief["weakIds"] as? [Int]) ?? []
@@ -171,5 +171,5 @@ struct PlanRow: View {
         .padding(.vertical, 10)
     }
 
-    private func kindColor(_ k: String) -> Color { k == "learn" ? .blue : k == "review" ? .green : Color.brand }
+    private func kindColor(_ k: String) -> Color { Color.brand }
 }

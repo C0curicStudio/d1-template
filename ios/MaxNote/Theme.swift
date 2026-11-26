@@ -72,15 +72,29 @@ struct BrandButtonStyle: ButtonStyle {
     }
 }
 
-/// Max 的标志：12 道长短不一的放射光芒（和网站、图标一样）
+/// Max 的标志：12 道长短不一的放射光芒（和网站、图标一样）。
+/// active：光芒缓缓呼吸、慢慢转；busy（思考中）：转得更快、伸缩更大
 struct MaxLogo: View {
     var size: CGFloat = 30
+    var active = false
+    var busy = false
+
     var body: some View {
+        if active {
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { tl in canvas(t: tl.date.timeIntervalSinceReferenceDate) }
+        } else {
+            canvas(t: 0)
+        }
+    }
+
+    private func canvas(t: Double) -> some View {
         Canvas { ctx, sz in
             let s = sz.width / 24, c = CGPoint(x: sz.width / 2, y: sz.height / 2)
             let radii: [CGFloat] = [10, 7.6, 9.4, 7.2, 10, 8, 9.2, 7.4, 10, 7.8, 9.6, 7.3]
-            for (i, r) in radii.enumerated() {
-                let a = Double(i) / 12 * 2 * .pi - .pi / 2
+            let speed = busy ? 2.6 : 0.9, amp = busy ? 0.2 : 0.07, spin = t / (busy ? 5 : 40) * 2 * .pi
+            for (i, r0) in radii.enumerated() {
+                let a = Double(i) / 12 * 2 * .pi - .pi / 2 + (active ? spin : 0)
+                let r = r0 * (1 + CGFloat(active ? amp * sin(t * speed + Double(i) * 0.9) : 0))
                 var p = Path()
                 p.move(to: CGPoint(x: c.x + CGFloat(cos(a)) * 2.4 * s, y: c.y + CGFloat(sin(a)) * 2.4 * s))
                 p.addLine(to: CGPoint(x: c.x + CGFloat(cos(a)) * r * s, y: c.y + CGFloat(sin(a)) * r * s))
@@ -88,54 +102,5 @@ struct MaxLogo: View {
             }
         }
         .frame(width: size, height: size)
-    }
-}
-
-/// 悬浮的 Max：可以拖动，松手贴到左右边，位置会记住；点一下开始对话
-struct MaxBall: View {
-    @EnvironmentObject private var router: Router
-    @AppStorage("ballRight") private var right = true
-    @AppStorage("ballY2") private var yFrac = 0.74
-    @State private var pos: CGPoint?
-    @State private var pressed = false
-
-    private let d: CGFloat = 52
-
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            if router.tab != 3 { // 学习台自带「问 AI 助教」条，不重复放球
-            let lo = geo.safeAreaInsets.top + d, hi = h - geo.safeAreaInsets.bottom - 110
-            let rest = CGPoint(x: right ? w - d / 2 - 10 : d / 2 + 10, y: min(max(yFrac * h, lo), hi))
-            MaxLogo(size: 32)
-                .frame(width: d, height: d)
-                .glassCapsule(interactive: true)
-                .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
-                .scaleEffect(pressed ? 1.12 : 1)
-                .opacity(pos == nil && !pressed ? 0.92 : 1)
-                .position(pos ?? rest)
-                .animation(.spring(response: 0.45, dampingFraction: 0.72), value: pos == nil)
-                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: pressed)
-                .gesture(
-                    DragGesture(minimumDistance: 6)
-                        .onChanged { v in
-                            if pos == nil { Haptic.soft() }
-                            pressed = true
-                            pos = v.location
-                        }
-                        .onEnded { v in
-                            right = v.location.x > w / 2
-                            yFrac = Double(min(max(v.location.y, lo), hi) / h)
-                            pressed = false
-                            pos = nil
-                            Haptic.tap()
-                        }
-                )
-                .onTapGesture { Haptic.tap(); router.ask(study: true) }
-                .accessibilityLabel("问 Max")
-                .accessibilityAddTraits(.isButton)
-            }
-        }
-        .allowsHitTesting(true)
     }
 }

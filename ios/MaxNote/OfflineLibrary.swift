@@ -17,7 +17,7 @@ struct OfflineLibraryView: View {
                             Text(r.subject).font(.caption.weight(.semibold)).foregroundStyle(Color.brand)
                             if !r.topic.isEmpty { Text(r.topic).font(.caption).foregroundStyle(.secondary) }
                             Spacer()
-                            if r.wrongs > 0 { Text("错 \(r.wrongs)").font(.caption).foregroundStyle(.red) }
+                            if r.wrongs > 0 { Text("错 \(r.wrongs)").font(.caption).foregroundStyle(Color.brand) }
                             Text(r.state).font(.caption2).foregroundStyle(.tertiary)
                         }
                         Text(plain(r.stem)).font(.body).lineLimit(3)
@@ -66,8 +66,12 @@ struct QDetail: View {
                 if !row.options.isEmpty {
                     VStack(alignment: .leading, spacing: 6) { ForEach(row.options, id: \.self) { Text(plain($0)) } }
                 }
-                block("正确答案", row.answer.joined(separator: " / "))
-                if !row.explanation.isEmpty { block("解析", row.explanation) }
+                if row.answer.isEmpty && row.explanation.isEmpty {
+                    Label("还没做过这道题：做完才显示答案和解析", systemImage: "lock").font(.subheadline).foregroundStyle(Color.mute)
+                } else {
+                    block("正确答案", row.answer.joined(separator: " / "))
+                    if !row.explanation.isEmpty { block("解析", row.explanation) }
+                }
             }
             .padding(20)
         }
