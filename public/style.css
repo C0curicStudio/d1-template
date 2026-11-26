@@ -710,3 +710,7 @@ h2 .fr.eyebrow{margin-left:6px;font-size:var(--fs-s);color:var(--mute)}
 .slog{display:flex;flex-direction:column;gap:8px;margin:10px 0}.slog:empty{display:none}
 #chat .chips{margin:8px 0}
 .study details summary{cursor:pointer;padding:8px 0;font-size:14px}
+
+/* iOS App 里（html.native）：像原生一样——不弹长按菜单、不出现点按高亮、回弹时不露底 */
+html.native{-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+html.native .stem,html.native .qs,html.native .mb,html.native textarea,html.native input{-webkit-touch-callout:default}

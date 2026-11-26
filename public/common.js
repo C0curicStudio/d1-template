@@ -50,6 +50,8 @@ const haptic = (() => {
 	const tick = () => { try { sw ||= document.body.appendChild(Object.assign(document.createElement("label"), { innerHTML: '<input type="checkbox" switch>', style: "position:fixed;left:-99px;top:0;opacity:0;pointer-events:none" })); sw.click(); } catch {} };
 	return (...gaps) => { // 例：haptic(0, 90, 110)：第 0、90、200 毫秒各一下
 		if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		const nb = window.webkit?.messageHandlers?.maxnote; // iOS App：交给原生震动引擎
+		if (nb) return void nb.postMessage({ type: "haptic", gaps });
 		if (navigator.vibrate) return void navigator.vibrate(gaps.flatMap((g, i) => (i ? [g, 12] : [12])));
 		let t = 0; for (const g of gaps) setTimeout(tick, (t += g));
 	};
