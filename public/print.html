@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Max Note：初三错题练习与复习">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="MAX NOTE">
+<meta name="application-name" content="MAX NOTE">
+<title>MAX NOTE · A4 排版</title>
+<script>(function(n,d){var p;try{p=localStorage.perf2}catch(e){}if(p==="lite"||(!p&&((n.deviceMemory||8)<4||(n.hardwareConcurrency||8)<4))||matchMedia("(prefers-reduced-transparency: reduce)").matches)d.classList.add("lite");var h=new Date().getHours();if(h>=21||h<7)d.classList.add("night")})(navigator,document.documentElement)</script>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/print.css">
+<meta name="theme-color" content="#f4efe6">
+<link rel="stylesheet" href="/katex/katex.min.css">
+</head><body class="printpage"><main>
+<a href="/" class="back noprint">←</a>
+<h1 class="hand-h1 noprint"><span class="hw bt">A4 排版</span></h1>
+<div class="noprint" id="ctl">
+  <div class="card">
+    <h2>1 选题</h2>
+    <div class="tabs" id="src"></div>
+    <div id="chips" class="chips"></div>
+    <div id="pick" class="pick"></div>
+    <div class="row"><button type="button" class="btn small" id="all">全选当前</button><button type="button" class="btn small" id="none">清空已选</button><span class="mute" id="cnt"></span></div>
+  </div>
+  <div class="card">
+    <h2>2 版式</h2>
+    <label class="opt2"><span>标题</span><input type="text" id="title" value="MAX NOTE 练习" maxlength="30"></label>
+    <div class="opt2"><span>分栏</span><div class="mseg" id="o-cols"></div></div>
+    <div class="opt2"><span>字号</span><div class="mseg" id="o-size"></div></div>
+    <div class="opt2"><span>答案</span><div class="mseg" id="o-ans"></div></div>
+    <div class="opt2"><span>解答留白</span><div class="mseg" id="o-lines"></div></div>
+    <label class="opt2"><span>姓名 / 日期栏</span><input type="checkbox" id="o-name" checked></label>
+  </div>
+  <div class="row" id="acts"></div>
+  <p class="mute" id="hint"></p>
+</div>
+<div id="paper"></div>
+</main>
+<script defer src="/katex/katex.min.js"></script>
+<script defer src="/katex/auto-render.min.js"></script>
+<script defer src="/katex/mhchem.min.js"></script>
+<script src="/common.js"></script>
+<script src="/board.js"></script>
+<script src="/circuit.js"></script>
+<script src="/fig.js"></script>
+<script src="/print.js"></script>
+</body></html>

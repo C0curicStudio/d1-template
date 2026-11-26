@@ -195,7 +195,6 @@ function tabbar(active) {
 	const ico = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 	const tabs = [
 		["/", "首页", ico('<path d="M4 10.5L12 4l8 6.5V20H4z"/><path d="M10 20v-5.5h4V20"/>')],
-		["/study", "学习台", ico('<path d="M12 3l9 4.5-9 4.5-9-4.5z"/><path d="M7 10.5V15c0 1.5 2.2 3 5 3s5-1.5 5-3v-4.5"/><path d="M21 7.5V13"/>')],
 		["/bank", "题库", ico('<path d="M4 5.5h16M4 12h16M4 18.5h16"/>')],
 		["/wrong", "错题本", ico('<path d="M5 4h14v16H5z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/>')],
 	];
