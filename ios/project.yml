@@ -1,0 +1,46 @@
+name: MaxNote
+options:
+  bundleIdPrefix: com.maxnote
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+targets:
+  MaxNote:
+    type: application
+    platform: iOS
+    sources:
+      - path: MaxNote
+    settings:
+      base:
+        PRODUCT_NAME: MaxNote
+        PRODUCT_BUNDLE_IDENTIFIER: com.maxnote.app
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: MaxNote/Info.plist
+      properties:
+        CFBundleDisplayName: MAX NOTE
+        CFBundleName: MAX NOTE
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIRequiresFullScreen: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: 拍照上传错题、拍照作答需要使用相机。
+        NSPhotoLibraryUsageDescription: 从相册选择错题或作答照片。
+        NSBluetoothAlwaysUsageDescription: 搜索并连接蓝牙打印机，把排好版的题目打印出来。

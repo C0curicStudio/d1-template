@@ -1,0 +1,56 @@
+name: Build iOS IPA
+
+# 手动运行（Actions → Build iOS IPA → Run workflow），或推送 ios-* 标签。
+# 产物是「未签名」的 .ipa：用 AltStore / Sideloadly / TrollStore 等工具侧载时会用你自己的 Apple ID 重新签名。
+on:
+  workflow_dispatch:
+  push:
+    tags: ["ios-*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 版本
+        run: xcodebuild -version
+
+      - name: 安装 XcodeGen 并生成工程
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate
+
+      - name: 编译（不签名）
+        run: |
+          cd ios
+          xcodebuild -project MaxNote.xcodeproj -scheme MaxNote \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/MaxNote.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            archive
+
+      - name: 打包 IPA
+        run: |
+          cd ios/build/MaxNote.xcarchive/Products/Applications
+          mkdir -p Payload
+          cp -R MaxNote.app Payload/
+          zip -qry "$GITHUB_WORKSPACE/MAX-NOTE.ipa" Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAX-NOTE-ipa
+          path: MAX-NOTE.ipa
+
+      - name: 发布到 Releases（下载链接）
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-build-${{ github.run_number }}
+          name: MAX NOTE iOS 构建 ${{ github.run_number }}
+          body: 未签名 IPA，用 AltStore / Sideloadly 等侧载工具安装（会用你的 Apple ID 重新签名）。
+          files: MAX-NOTE.ipa
