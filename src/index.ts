@@ -452,6 +452,15 @@ app.post("/api/ai/config", async (c) => {
 });
 app.delete("/api/ai/config", async (c) => (await clearCfg(c.env), c.json(publicCfg(await aiCfg(c.env)))));
 // AI 学习台：掌握度地图 + 今日计划（打开页面不花额度）、AI 排计划、知识点微课（流式）
+// A4 排版打印：按 id 取完整题目（题干、选项、题图、答案、解析），顺序按传入的 ids
+app.get("/api/print", async (c) => {
+	const ids = idsParam(c.req.query("ids"));
+	if (!ids.length) return c.json({ items: [] });
+	const { results } = await c.env.DB.prepare(`SELECT * FROM questions WHERE id IN (${inList(ids)})`).bind(...ids).all<Q>();
+	const by = new Map(results.map((q) => [q.id, q]));
+	return c.json({ items: ids.map((id) => by.get(id)).filter(Boolean).map((q) => ({ ...clientQ(q!), answer: parse<string[]>(q!.answer, []), explanation: q!.explanation })) });
+});
+app.get("/study", (c) => c.redirect("/")); // 学习台已并入主页
 app.get("/api/study", async (c) => {
 	const rows = await masteryRows(c.env.DB), cfg = await aiCfg(c.env);
 	const n = rows.reduce((t, r) => t + r.n, 0), r = rows.reduce((t, x) => t + x.r, 0);

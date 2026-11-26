@@ -1,0 +1,32 @@
+/* A4 排版：屏幕上是一张张 210×297mm 的纸（所见即所得），打印时只输出纸张 */
+.pick{max-height:260px;overflow:auto;margin:8px 0;border:1px solid var(--line);border-radius:var(--r-m);background:var(--card)}
+.pick .pg{position:sticky;top:0;padding:6px 12px;font-size:13px;font-weight:600;color:var(--pri);background:var(--card);border-bottom:1px solid var(--line)}
+.pick label{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px;line-height:1.45}
+.pick label:last-child{border-bottom:0}.pick input{margin-top:3px;width:18px;height:18px;flex:none}
+.opt2{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;font-size:15px}
+.opt2 input[type=text]{width:60%}.opt2 input[type=checkbox]{width:22px;height:22px}
+#paper{display:flex;flex-direction:column;align-items:center;gap:16px;margin:16px -16px 90px;padding:0}
+.sheet{box-sizing:border-box;width:210mm;height:297mm;padding:12mm;background:#fff;color:#111;position:relative;overflow:hidden;box-shadow:0 6px 28px rgba(0,0,0,.18);flex:none;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC',system-ui,sans-serif}
+.sheet .ph{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1.5px solid #111;padding-bottom:3mm;margin-bottom:4mm}
+.sheet .ph h1{margin:0;font-size:1.45em;font-weight:700;letter-spacing:.02em}.sheet .ph span{font-size:.9em;color:#333}
+.sheet .cols{display:flex;gap:8mm}.sheet .col{flex:1;min-width:0}
+.sheet .pf{position:absolute;left:0;right:0;bottom:5mm;text-align:center;font-size:10px;color:#888}
+.sheet .q{display:flex;gap:2.2mm;margin-bottom:4.5mm;line-height:1.55;break-inside:avoid}
+.sheet .qn{font-weight:700;min-width:1.7em}.sheet .qb{flex:1;min-width:0}
+.sheet .qm{font-size:.72em;color:#777;margin-bottom:.6mm}.sheet .qs{white-space:pre-wrap;overflow-wrap:anywhere}
+.sheet .qo{display:grid;gap:.6mm 5mm;margin-top:1.4mm}.sheet .qo.two{grid-template-columns:1fr 1fr}
+.sheet .qfig{margin:2mm 0;text-align:center}.sheet .qfig canvas,.sheet .qfig img,.sheet .qfig svg{max-width:100%;max-height:55mm;width:auto!important;height:auto!important}
+.sheet .ln{height:8.5mm;border-bottom:.7px solid #999}.sheet .box{height:46mm;border:.8px dashed #999;border-radius:1mm;margin-top:2mm}
+.sheet .qa{margin-top:1.6mm;padding:1.4mm 2.2mm;background:#f3f3f3;border-radius:1mm;font-size:.9em}
+.sheet .sec{font-size:1.2em;font-weight:700;margin:0 0 4mm;padding-bottom:2mm;border-bottom:1px solid #111}
+.sheet.s1{font-size:11.5px}.sheet.s2{font-size:13.5px}.sheet.s3{font-size:16px}
+#meas{position:absolute;left:-9999px;top:0;visibility:hidden}
+@media print{
+  @page{size:A4;margin:0}
+  html,body{background:#fff!important}
+  body>*:not(main),.noprint,.tabbar,.maxball,.mpeek,.island{display:none!important}
+  main{padding:0!important;margin:0!important;max-width:none!important}
+  #paper{display:block;margin:0;gap:0;zoom:1!important}
+  .sheet{box-shadow:none;page-break-after:always;break-after:page;margin:0}
+  .sheet:last-child{page-break-after:auto;break-after:auto}
+}

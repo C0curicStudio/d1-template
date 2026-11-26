@@ -1,6 +1,6 @@
+(() => {
 // AI 学习台：掌握度地图 + AI 计划 + 知识点微课（流式）+ 带学习数据的答疑。
 // 打开页面不花额度（掌握度、规则计划都是本地算的）；点「学」「问」「AI 重排」才用模型。
-tabbar("/study");
 const LS = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const prefs = (() => { try { return JSON.parse(LS("max_prefs") || "{}"); } catch { return {}; } })();
 let data = null, topic = "", busy = false;
@@ -29,8 +29,8 @@ async function stream(url, body, box) {
 // ---------- 顶部 + 计划 ----------
 function renderTop() {
 	const weak = data.rows.filter((r) => r.level === "薄弱").length, acc = data.n ? Math.round((data.right / data.n) * 100) : null;
-	$("#sub").textContent = data.n ? `近 60 天练了 ${data.n} 题，正确率 ${acc}%，${weak ? weak + " 个薄弱考点" : "没有薄弱考点"} · ` : "还没有做题记录 · ";
-	$("#sub").append(el("span", { textContent: data.ai.on ? `AI：${data.ai.name}` : "AI：用 Cloudflare 免费额度（设置里可接入自己的模型）" }));
+	$("#stsub").textContent = data.n ? `近 60 天练了 ${data.n} 题，正确率 ${acc}%，${weak ? weak + " 个薄弱考点" : "没有薄弱考点"} · ` : "还没有做题记录 · ";
+	$("#stsub").append(el("span", { textContent: data.ai.on ? `AI：${data.ai.name}` : "AI：用 Cloudflare 免费额度（设置里可接入自己的模型）" }));
 }
 function renderPlan() {
 	const p = data.plan, box = $("#plan");
@@ -112,6 +112,7 @@ async function load() {
 	data = await api("/api/study");
 	renderTop(); renderPlan(); renderMap();
 }
-load().catch((e) => { $("#sub").textContent = "加载失败：" + e.message; });
+load().catch((e) => { $("#stsub").textContent = "加载失败：" + e.message; });
 addEventListener("max:changed", () => load().catch(() => {}));
 autoRefresh(() => load().catch(() => {}));
+})();
