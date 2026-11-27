@@ -1,36 +1,24 @@
 import SwiftUI
 
-/// 开屏：珊瑚色底 + 放大的大 M（和图标同一个 M）。先轻轻弹出，停一下，再继续放大淡出，露出 App
+/// 开屏：和系统启动画面（奶油底 + 居中的 M）完全重合，所以从图标点开时没有跳变；停一下，M 轻轻放大淡出，露出 App
 struct SplashView: View {
     let onDone: () -> Void
-    @State private var shown = false
     @State private var leaving = false
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                LinearGradient(colors: [Color(red: 0.89, green: 0.60, blue: 0.47), Color(red: 0.80, green: 0.42, blue: 0.29), Color(red: 0.70, green: 0.32, blue: 0.20)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .opacity(shown ? 1 : 0)
-                Color("LaunchBG").opacity(shown ? 0 : 1) // 和系统启动画面同色，衔接没有闪烁
-                Image("SplashM")
-                    .resizable().scaledToFit()
-                    .frame(width: min(geo.size.width * 0.66, 420))
-                    .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
-                    .scaleEffect(leaving ? 2.4 : (shown ? 1 : 0.72))
-                    .opacity(leaving ? 0 : (shown ? 1 : 0))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .ignoresSafeArea()
-            .opacity(leaving ? 0 : 1)
+        ZStack {
+            Color("LaunchBG")
+            Image("LaunchM")                      // 和启动画面同一张图、同样大小、同在屏幕正中
+                .scaleEffect(leaving ? 1.6 : 1)
+                .opacity(leaving ? 0 : 1)
         }
         .ignoresSafeArea()
+        .opacity(leaving ? 0 : 1)
         .allowsHitTesting(!leaving)
         .task {
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.72)) { shown = true }
-            try? await Task.sleep(nanoseconds: 1_150_000_000)
-            withAnimation(.easeIn(duration: 0.5)) { leaving = true }
-            try? await Task.sleep(nanoseconds: 520_000_000)
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            withAnimation(.easeInOut(duration: 0.45)) { leaving = true }
+            try? await Task.sleep(nanoseconds: 480_000_000)
             onDone()
         }
     }

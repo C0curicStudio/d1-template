@@ -34,6 +34,7 @@ targets:
         LSRequiresIPhoneOS: true
         UILaunchScreen:
           UIColorName: LaunchBG
+          UIImageName: LaunchM
         UIRequiresFullScreen: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
