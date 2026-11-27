@@ -18,7 +18,7 @@
 
 ## 连接 claude.ai（阶段二）
 
-MCP 地址：`https://<你的 Worker 域名>/mcp`（例如 `https://d1-template.cuihy0119.workers.dev/mcp`）
+MCP 地址：`https://<你的 Worker 域名>/mcp`（例如 `https://lxb.maxcc.cc.cd/mcp`）
 
 1. claude.ai → 设置 → 连接器 → **添加自定义连接器**
 2. 名称随意（如「MAX NOTE」），URL 填上面的 `/mcp` 地址，保存
