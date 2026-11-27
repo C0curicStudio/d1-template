@@ -75,23 +75,40 @@ final class GridBackground: UIView {
     }
 }
 
+/// 嵌在页面里的画布：大小跟着所在位置走（一个手指画、两个手指移动 / 缩放），背景是方格 / 坐标系 / 横线纸
+final class InlineCanvas: PKCanvasView {
+    let bg = GridBackground(frame: .zero)
+    var onSize: ((CGSize) -> Void)?
+    private var last = CGSize.zero
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if bounds.size != last, bounds.width > 10 {
+            last = bounds.size
+            contentSize = bounds.size
+            bg.frame = CGRect(origin: .zero, size: bounds.size)
+            onSize?(bounds.size)
+        }
+    }
+}
+
 struct SketchCanvas: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     let kind: BoardKind
+    var onSize: ((CGSize) -> Void)? = nil
+    var onTouch: ((Bool) -> Void)? = nil
 
     func makeCoordinator() -> Coord { Coord(self) }
 
-    func makeUIView(context: Context) -> PKCanvasView {
-        let c = PKCanvasView()
+    func makeUIView(context: Context) -> InlineCanvas {
+        let c = InlineCanvas()
         c.drawingPolicy = .anyInput
         c.overrideUserInterfaceStyle = .light // 墨水颜色和导出的图保持一致，不随深色模式反色
         c.backgroundColor = .clear
         c.isOpaque = false
-        c.contentSize = boardSize
-        c.alwaysBounceVertical = true
-        let bg = GridBackground(frame: CGRect(origin: .zero, size: boardSize))
-        bg.kind = kind
-        c.insertSubview(bg, at: 0)
+        c.isScrollEnabled = false              // 嵌在题目里：页面自己滚动，画布只负责画
+        c.bg.kind = kind
+        c.onSize = onSize
+        c.insertSubview(c.bg, at: 0)
         c.drawing = drawing
         c.delegate = context.coordinator
         let picker = PKToolPicker()
@@ -102,8 +119,10 @@ struct SketchCanvas: UIViewRepresentable {
         return c
     }
 
-    func updateUIView(_ c: PKCanvasView, context: Context) {
+    func updateUIView(_ c: InlineCanvas, context: Context) {
+        context.coordinator.parent = self
         if c.drawing != drawing { c.drawing = drawing }
+        if c.bg.kind != kind { c.bg.kind = kind }
     }
 
     final class Coord: NSObject, PKCanvasViewDelegate {
@@ -111,15 +130,18 @@ struct SketchCanvas: UIViewRepresentable {
         var picker: PKToolPicker?
         init(_ p: SketchCanvas) { parent = p }
         func canvasViewDrawingDidChange(_ c: PKCanvasView) { parent.drawing = c.drawing }
+        func canvasViewDidBeginUsingTool(_ c: PKCanvasView) { parent.onTouch?(true) }
+        func canvasViewDidEndUsingTool(_ c: PKCanvasView) { parent.onTouch?(false) }
     }
 }
 
 enum BoardRender {
     /// 画板导出成图：full = 整张纸（自己看）；否则只裁出画了东西的部分（发给老师，小而清楚）
-    static func image(_ d: PKDrawing, kind: BoardKind, full: Bool) -> UIImage? {
+    static func image(_ d: PKDrawing, kind: BoardKind, full: Bool, size: CGSize = boardSize) -> UIImage? {
         guard !d.bounds.isEmpty else { return nil }
-        let all = CGRect(origin: .zero, size: boardSize)
+        let all = CGRect(origin: .zero, size: size)
         let rect = full ? all : d.bounds.insetBy(dx: -30, dy: -30).intersection(all)
+        guard rect.width > 1, rect.height > 1 else { return nil }
         let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1
         let r = UIGraphicsImageRenderer(size: rect.size, format: fmt)
         return r.image { ctx in

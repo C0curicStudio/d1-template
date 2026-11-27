@@ -56,6 +56,7 @@ extension GeoBoard: BoardAnswer {
 struct GeoBoardPanel: View {
     @ObservedObject var board: GeoBoard
     var canvasHeight: CGFloat = 360
+    var onTouch: ((Bool) -> Void)? = nil
     @State private var started = false
     @State private var askText = ""
     @State private var plotAsk = false
@@ -95,8 +96,8 @@ struct GeoBoardPanel: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.8))
                 .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { v in if !started { started = true; board.down(v.location) } else { board.move(v.location) } }
-                    .onEnded { v in started = false; board.up(v.location) })
+                    .onChanged { v in if !started { started = true; onTouch?(true); board.down(v.location) } else { board.move(v.location) } }
+                    .onEnded { v in started = false; board.up(v.location); onTouch?(false) })
         }
         .onChange(of: board.ask?.id) { _ in askText = board.ask?.def ?? "" }
         .alert(board.ask?.title ?? "", isPresented: Binding(get: { board.ask != nil }, set: { if !$0 { board.ask = nil } })) {
@@ -149,6 +150,7 @@ private let SYMBOLS = ["÷", "×", "√", "²", "³", "^", "π", "°", "≠", "�
 
 struct CalcBoardPanel: View {
     @ObservedObject var calc: CalcBoard
+    var onTouch: ((Bool) -> Void)? = nil
     @State private var showCalc = false
     @State private var showForms = false
     @FocusState private var focusStep: Int?
@@ -162,7 +164,7 @@ struct CalcBoardPanel: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            GeoBoardPanel(board: calc.pad, canvasHeight: 320)
+            GeoBoardPanel(board: calc.pad, canvasHeight: 320, onTouch: onTouch)
             HStack(spacing: 8) {
                 toolButton("计算器", on: showCalc) { showCalc.toggle() }
                 if calc.subject == "物理" { toolButton("公式", on: showForms) { showForms.toggle() } }
