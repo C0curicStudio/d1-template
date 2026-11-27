@@ -182,7 +182,7 @@ struct QuizView: View {
             note("画板里画的会随答案交卷：文字描述 + 图，Max / Claude 批改。")
         } else {
             typedBox(minHeight: 120, prompt: "写出你的解答过程和答案…")
-            Picker("", selection: Binding(get: { pads[i] ?? .hand }, set: { Haptic.select(); withAnimation(.snappy) { pads[i] = $0 } })) {
+            Picker("", selection: Binding(get: { pads[i] ?? .hand }, set: { v in Haptic.select(); withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { pads[i] = v } })) {
                 ForEach(Pad.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
