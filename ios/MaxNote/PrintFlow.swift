@@ -262,6 +262,11 @@ struct PrintFlow: View {
             HStack(spacing: 8) {
                 Button { if let d = doc { airPrint(d) } } label: { Label("AirPrint", systemImage: "printer").lineLimit(1) }.buttonStyle(GlassButtonStyle(prominent: true))
                 Button { showPrinter = true } label: { Label("蓝牙", systemImage: "dot.radiowaves.left.and.right").lineLimit(1) }.buttonStyle(GlassButtonStyle())
+                Menu {
+                    Button { if let d = doc { Haptic.tap(); Exporter.pdf(d, name: opt.title) } } label: { Label("导出 PDF", systemImage: "doc.richtext") }
+                    Button { if let d = doc { Haptic.tap(); Exporter.images(d, name: opt.title) } } label: { Label("导出图片（每页一张）", systemImage: "photo.on.rectangle") }
+                } label: { Label("导出", systemImage: "square.and.arrow.up").lineLimit(1) }
+                    .buttonStyle(GlassButtonStyle())
             }
             .disabled(doc == nil).opacity(doc == nil ? 0.5 : 1)
             Button { picking = true } label: { Label("写完了：拍照让 Max 检查", systemImage: "camera.viewfinder").lineLimit(1) }
