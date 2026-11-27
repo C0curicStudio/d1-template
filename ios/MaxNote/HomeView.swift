@@ -79,8 +79,7 @@ struct HomeView: View {
 
     /// 打开 claude.ai 新对话并预填指令（同时复制好，App 里没带出来时粘贴即可）
     private func askClaude(_ text: String) {
-        UIPasteboard.general.string = text
-        if let u = URL(string: "https://claude.ai/new?q=" + text.urlEnc) { UIApplication.shared.open(u) }
+        openClaude(text)
         note = "指令已复制，在 Claude 里粘贴发送即可"
     }
 

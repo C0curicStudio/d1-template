@@ -22,17 +22,21 @@ struct QuizView: View {
     @State private var confirmExit = false
     @State private var marked = Set<Int>()
     @State private var boards: [Int: PKDrawing] = [:]    // 画板 / 手写答案：交卷时拍成图交给老师
-    @State private var scratches: [Int: PKDrawing] = [:] // 草稿纸：不交
     @State private var photos: [Int: [UIImage]] = [:]    // 拍照作答
     @State private var cover: Cover?
     @State private var smart: [Int: SmartBoard] = [:]      // 画板作答（作图 / 函数 / 电路 / 光路 / 受力 / 证明）：交卷
     @State private var calcScratch: [Int: CalcBoard] = [:] // 计算草稿板：不交
     @State private var fromCache = false
     @State private var queued = false
+    @State private var pads: [Int: Pad] = [:]            // 每题当前显示的是 手写 / 草稿 / 拍照
+    @State private var handSize: [Int: CGSize] = [:]     // 手写纸的实际大小：导出图用
+    @State private var touching = false                  // 正在纸上画：页面先别滚动
+
+    enum Pad: String, CaseIterable { case hand = "手写", calc = "草稿", photo = "拍照" }
 
     enum Cover: Identifiable {
-        case sketch(SketchSpec), camera(Int), smart(Int, Bool)
-        var id: String { switch self { case .sketch(let s): return "s-\(s.id)"; case .camera(let i): return "c-\(i)"; case .smart(let i, let sc): return "b-\(i)-\(sc)" } }
+        case camera(Int)
+        var id: String { switch self { case .camera(let i): return "c-\(i)" } }
     }
 
     enum Phase { case loading, doing, submitting, result, empty, failed, drill }
@@ -83,13 +87,8 @@ struct QuizView: View {
         .sheet(item: $sheet) { SheetHost(kind: $0).environmentObject(router) }
         .fullScreenCover(item: $cover) { c in
             switch c {
-            case .sketch(let s):
-                SketchBoard(title: s.title, kind: s.kind, scratch: s.scratch, drawing: Binding(get: { (s.scratch ? scratches[s.idx] : boards[s.idx]) ?? PKDrawing() }, set: { if s.scratch { scratches[s.idx] = $0 } else { boards[s.idx] = $0 } }))
             case .camera(let i):
                 ImagePicker(camera: true) { photos[i, default: []].append($0) }.ignoresSafeArea()
-            case .smart(let i, let scratch):
-                if scratch, let b = calcScratch[i] { BoardScreen(board: .calc(b), scratch: true) }
-                else if let b = smart[i] { BoardScreen(board: b, scratch: false) }
             }
         }
         .task { await load() }
@@ -124,6 +123,7 @@ struct QuizView: View {
                 .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
             }
             .scrollDismissesKeyboard(.interactively)
+            .scrollDisabled(touching)
             bottomBar
         }
         .onAppear { started[idx] = started[idx] ?? Date() }
@@ -136,21 +136,7 @@ struct QuizView: View {
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .padding(14).glassCard(cornerRadius: 16)
         } else if type == "short" {
-            // 简答 / 计算 / 解答：直接写在这里，交卷后 Max 批改
-            let bind = Binding(get: { texts[idx] ?? "" }, set: { texts[idx] = $0 })
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: bind)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 200)
-                    .padding(10)
-                    .accessibilityIdentifier("shortAnswer")
-                if (texts[idx] ?? "").isEmpty {
-                    Text("写出你的解答过程和答案…").foregroundStyle(Color.mute.opacity(0.7)).padding(.horizontal, 15).padding(.vertical, 18).allowsHitTesting(false)
-                }
-            }
-            .background(Color.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.6))
-            boardTools(q)
+            shortArea(q)
         } else {
             if type == "multi" { Text("多选").font(.caption).foregroundStyle(.secondary) }
             VStack(spacing: 10) {
@@ -184,42 +170,95 @@ struct QuizView: View {
         }
     }
 
-    /// 画板 / 手写 / 拍照：作图、函数、电路、光路、受力、证明的画板就是答案；其余题的「手写答案」也交给老师看图，「草稿纸」不交
-    @ViewBuilder private func boardTools(_ q: J) -> some View {
-        let tag = q.str("tag"), kind = BoardKind.forTag(tag), drawn = drawnTags.contains(tag)
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                if drawn {
-                    // 作图类：智能画板（吸附、自动算方程和交点 / 电路通电）就是答案
-                    Button {
-                        if smart[idx] == nil { smart[idx] = SmartBoard.make(tag: tag, subject: q.str("subject")) }
-                        cover = .smart(idx, false)
-                    } label: { Label(smart[idx] == nil ? "打开画板作答" : "继续画", systemImage: "scribble.variable").lineLimit(1) }.buttonStyle(BrandButtonStyle(filled: true))
-                } else {
-                    Button { cover = .sketch(SketchSpec(idx: idx, title: "手写答案", kind: kind, scratch: false)) } label: { Label("手写答案", systemImage: "pencil.tip.crop.circle").lineLimit(1) }.buttonStyle(BrandButtonStyle())
-                    Button {
-                        if calcScratch[idx] == nil { calcScratch[idx] = CalcBoard(subject: q.str("subject")) }
-                        cover = .smart(idx, true)
-                    } label: { Label("计算草稿板", systemImage: "function").lineLimit(1) }.buttonStyle(BrandButtonStyle())
+    // MARK: 简答 / 计算 / 作图：答题区直接铺开，不再点按钮跳页面
+    /// 作图 / 函数 / 电路 / 光路 / 受力 / 证明：画板直接在题下面，画的就是答案；其余题：打字框 + 下面的 手写 / 草稿 / 拍照 切换
+    @ViewBuilder private func shortArea(_ q: J) -> some View {
+        let tag = q.str("tag"), drawn = drawnTags.contains(tag), i = idx
+        if drawn, let b = smart[i] {
+            paperCard { smartPanel(b) }
+            if !b.answer.isEmpty { Text(b.answer.describe()).font(.footnote).foregroundStyle(Color.mute).lineLimit(3) }
+            typedBox(minHeight: 80, prompt: "补充说明（可不写）")
+            photoRow(i, title: "拍照补充")
+            note("画板里画的会随答案交卷：文字描述 + 图，Max / Claude 批改。")
+        } else {
+            typedBox(minHeight: 120, prompt: "写出你的解答过程和答案…")
+            Picker("", selection: Binding(get: { pads[i] ?? .hand }, set: { Haptic.select(); withAnimation(.snappy) { pads[i] = $0 } })) {
+                ForEach(Pad.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            switch pads[i] ?? .hand {
+            case .hand:
+                handPad(q, i)
+                note("写在纸上的会交给 Claude 看图批改；打字的由 Max 批改。")
+            case .calc:
+                if let c = calcScratch[i] { paperCard { CalcBoardPanel(calc: c, onTouch: { touching = $0 }) } }
+                note("草稿纸：随便算，不会交。")
+            case .photo:
+                photoRow(i, title: "拍照作答")
+                note("拍下写好的解答，交给 Claude 批改。")
+            }
+        }
+    }
+
+    private func typedBox(minHeight: CGFloat, prompt: String) -> some View {
+        let i = idx
+        let bind = Binding(get: { texts[i] ?? "" }, set: { texts[i] = $0 })
+        return ZStack(alignment: .topLeading) {
+            TextEditor(text: bind)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: minHeight)
+                .padding(10)
+                .accessibilityIdentifier("shortAnswer")
+            if (texts[i] ?? "").isEmpty {
+                Text(prompt).foregroundStyle(Color.mute.opacity(0.7)).padding(.horizontal, 15).padding(.vertical, 18).allowsHitTesting(false)
+            }
+        }
+        .background(Color.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.6))
+    }
+
+    private func handPad(_ q: J, _ i: Int) -> some View {
+        let kind = BoardKind.forTag(q.str("tag"))
+        return SketchCanvas(drawing: Binding(get: { boards[i] ?? PKDrawing() }, set: { boards[i] = $0 }), kind: kind,
+                            onSize: { handSize[i] = $0 }, onTouch: { touching = $0 })
+            .frame(height: 300)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.6))
+            .overlay(alignment: .topTrailing) {
+                if hasBoard(i) {
+                    Button { boards[i] = nil; Haptic.soft() } label: { Image(systemName: "trash.circle.fill").font(.title2).foregroundStyle(Color.mute, Color.white) }
+                        .padding(8).transition(.opacity)
                 }
-                Button { cover = .camera(idx) } label: { Label("拍照作答", systemImage: "camera").lineLimit(1) }.buttonStyle(BrandButtonStyle())
             }
-            if drawn, let b = smart[idx], !b.answer.isEmpty {
-                Text(b.answer.describe()).font(.footnote).foregroundStyle(Color.mute).lineLimit(4).padding(10).frame(maxWidth: .infinity, alignment: .leading).background(Color.card, in: RoundedRectangle(cornerRadius: 10))
-            }
-            if let d = boards[idx], !d.bounds.isEmpty, let img = BoardRender.image(d, kind: kind, full: false) {
-                Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 180).background(Color.white).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(alignment: .topTrailing) { Button { boards[idx] = nil } label: { Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(Color.mute) }.padding(6) }
-            }
-            if let ps = photos[idx], !ps.isEmpty {
+    }
+
+    @ViewBuilder private func smartPanel(_ b: SmartBoard) -> some View {
+        switch b {
+        case .geo(let g): GeoBoardPanel(board: g, canvasHeight: 360, onTouch: { touching = $0 })
+        case .circuit(let c): CircuitBoardPanel(board: c, canvasHeight: 360, onTouch: { touching = $0 })
+        case .calc(let c): CalcBoardPanel(calc: c, onTouch: { touching = $0 })
+        }
+    }
+
+    private func paperCard<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        c().padding(8).background(Color.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.6))
+    }
+
+    private func note(_ t: String) -> some View { Text(t).font(.caption).foregroundStyle(Color.mute) }
+
+    private func photoRow(_ i: Int, title: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { cover = .camera(i) } label: { Label(title, systemImage: "camera").lineLimit(1) }.buttonStyle(BrandButtonStyle())
+            if let ps = photos[i], !ps.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack { ForEach(Array(ps.enumerated()), id: \.offset) { n, p in
                         Image(uiImage: p).resizable().scaledToFill().frame(width: 84, height: 84).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .overlay(alignment: .topTrailing) { Button { photos[idx]?.remove(at: n) } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white, Color.mute) }.padding(3) }
+                            .overlay(alignment: .topTrailing) { Button { photos[i]?.remove(at: n) } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.white, Color.mute) }.padding(3) }
                     } }
                 }
             }
-            Text(drawn ? "画板里画的会随答案交卷（文字描述 + 图），也可以再打字补充。" : "打字写的由 Max 批改；用了手写答案或拍照，则由 Claude 看图批改。草稿板不会交。").font(.caption).foregroundStyle(Color.mute)
         }
     }
 
@@ -281,9 +320,27 @@ struct QuizView: View {
                 .frame(width: 130, height: 130).padding(.top, 10)
                 if queued { Label("没有网络：答案已存在本机，联网后会自动交卷并批改", systemImage: "icloud.and.arrow.up").font(.subheadline).foregroundStyle(Color.mute).card() }
                 if wait > 0 && polling { ProgressView("Max 批改中…").font(.footnote) }
+                claudeCard
                 ForEach(Array(results.enumerated()), id: \.offset) { _, r in ResultCard(r: r, sheet: $sheet) }
             }
             .padding(16)
+        }
+    }
+
+    /// 做完后直达 Claude：Claude 通过「练习本」连接器自己取作答、批改、讲解
+    @ViewBuilder private var claudeCard: some View {
+        let toGrade = results.contains { $0.str("status") == "待批改" && $0.str("grader").isEmpty }
+        let wrong = results.contains { $0.int("is_correct") == 0 && $0.str("status") != "待批改" }
+        if toGrade || wrong || !marked.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("交给 Claude", systemImage: "arrow.up.forward.app").font(.subheadline.weight(.semibold))
+                if toGrade { Button { openClaude("用练习本：批改我刚交的待批改作答（手写 / 拍照 / 作图），写评语") } label: { Label("批改手写 / 拍照的题", systemImage: "checkmark.seal").frame(maxWidth: .infinity) }.buttonStyle(BrandButtonStyle(filled: true)) }
+                if wrong { Button { openClaude("用练习本：讲讲我这次做错的题，指出错因并给同类练习") } label: { Label("讲解做错的题", systemImage: "text.book.closed").frame(maxWidth: .infinity) }.buttonStyle(BrandButtonStyle()) }
+                if !marked.isEmpty { Button { openClaude("用练习本：解析我标记的题") } label: { Label("解析标记的题（\(marked.count)）", systemImage: "flag").frame(maxWidth: .infinity) }.buttonStyle(BrandButtonStyle()) }
+                Text("点一下会打开 Claude 并带好指令（已复制，没带出来就粘贴）。").font(.caption).foregroundStyle(Color.mute)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card()
         }
     }
 
@@ -303,8 +360,19 @@ struct QuizView: View {
                 return
             }
             idx = 0; started = [0: Date()]
+            prepareBoards()
             withAnimation { phase = .doing }
         } catch { self.error = error.localizedDescription; phase = .failed }
+    }
+
+    /// 每道简答题先备好画板：作图类是答案画板，其余是计算草稿板
+    @MainActor private func prepareBoards() {
+        smart = [:]; calcScratch = [:]
+        for (i, q) in qs.enumerated() where q.str("type") == "short" {
+            let tag = q.str("tag")
+            if drawnTags.contains(tag) { smart[i] = SmartBoard.make(tag: tag, subject: q.str("subject")) }
+            else { calcScratch[i] = CalcBoard(subject: q.str("subject")) }
+        }
     }
 
     /// 标记：交卷后进「标记的题」，可以让 Max / Claude 解析
@@ -345,10 +413,10 @@ struct QuizView: View {
                 if let d = boards[i], !d.bounds.isEmpty {
                     let kind = BoardKind.forTag(tag)
                     hand = true
-                    if let full = BoardRender.image(d, kind: kind, full: true), let fd = ImageUtil.jpeg(full, maxSide: 1280, maxBytes: 900_000) {
+                    if let full = BoardRender.image(d, kind: kind, full: true, size: handSize[i] ?? boardSize), let fd = ImageUtil.jpeg(full, maxSide: 1280, maxBytes: 900_000) {
                         keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", fields: ["kind": "view"], images: [fd]).str("key"))
                     }
-                    if let small = BoardRender.image(d, kind: kind, full: false), let sd = ImageUtil.jpeg(small, maxSide: 1024, maxBytes: 600_000) {
+                    if let small = BoardRender.image(d, kind: kind, full: false, size: handSize[i] ?? boardSize), let sd = ImageUtil.jpeg(small, maxSide: 1024, maxBytes: 600_000) {
                         keys.append(try await API.shared.upload("/api/attempt-photo", field: "file", fields: ["kind": "board"], images: [sd]).str("key"))
                     }
                 }

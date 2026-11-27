@@ -82,6 +82,12 @@ struct EmptyHint: View {
     }
 }
 
+/// 打开 claude.ai 新对话并预填指令（同时复制好，App 里没带出来时粘贴即可）
+func openClaude(_ text: String) {
+    UIPasteboard.general.string = text
+    if let u = URL(string: "https://claude.ai/new?q=" + text.urlEnc) { UIApplication.shared.open(u) }
+}
+
 /// Max 回答的排版：**加粗** 走系统 Markdown；公式去掉记号保持可读
 func md(_ s: String) -> AttributedString {
     let t = plain(s)

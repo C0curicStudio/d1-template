@@ -363,6 +363,7 @@ struct PartIcon: View {
 struct CircuitBoardPanel: View {
     @ObservedObject var board: CircuitBoard
     var canvasHeight: CGFloat = 360
+    var onTouch: ((Bool) -> Void)? = nil
     @State private var started = false
     @State private var askText = ""
 
@@ -397,8 +398,8 @@ struct CircuitBoardPanel: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline, lineWidth: 0.8))
                 .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { v in if !started { started = true; board.down(v.location) } else { board.move(v.location) } }
-                    .onEnded { v in started = false; board.up(v.location) })
+                    .onChanged { v in if !started { started = true; onTouch?(true); board.down(v.location) } else { board.move(v.location) } }
+                    .onEnded { v in started = false; board.up(v.location); onTouch?(false) })
         }
         .onChange(of: board.ask?.id) { _ in askText = board.ask?.def ?? "" }
         .alert(board.ask?.title ?? "", isPresented: Binding(get: { board.ask != nil }, set: { if !$0 { board.ask = nil } })) {
