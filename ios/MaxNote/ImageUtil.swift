@@ -61,14 +61,18 @@ private struct FigRep: UIViewRepresentable {
         let uc = WKUserContentController()
         uc.add(WeakHandler(context.coordinator), name: "maxnote")
         cfg.userContentController = uc
+        // 题图页面直接在软件包里（web/figview.html），不向服务器要；题图数据用脚本注入
+        if let d = try? JSONSerialization.data(withJSONObject: fig, options: [.fragmentsAllowed]) {
+            let b64 = d.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+            uc.addUserScript(WKUserScript(source: "window.__FIG__='\(b64)';", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         let v = WKWebView(frame: .zero, configuration: cfg)
         v.isOpaque = false
         v.backgroundColor = .clear
         v.scrollView.isScrollEnabled = false
         v.scrollView.backgroundColor = .clear
-        if let d = try? JSONSerialization.data(withJSONObject: fig, options: [.fragmentsAllowed]) {
-            let b64 = d.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
-            if let u = URL(string: Site.text + "/figview#" + b64) { v.load(URLRequest(url: u)) }
+        if let dir = Bundle.main.url(forResource: "web", withExtension: nil) {
+            v.loadFileURL(dir.appendingPathComponent("figview.html"), allowingReadAccessTo: dir)
         }
         return v
     }

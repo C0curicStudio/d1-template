@@ -2,8 +2,13 @@ import Foundation
 
 /// 网站地址：默认是部署好的 Workers 地址，可以在「无法连接」卡片里改（存在本机）。
 enum Site {
-    static let defaultURL = "https://d1-template.cuihy0119.workers.dev"
+    static let defaultURL = "https://lxb.maxcc.cc.cd"
     private static let key = "siteURL"
+
+    /// 旧版本存过的 workers.dev 地址：换域名后自动改用新域名
+    static func migrate() {
+        if let s = UserDefaults.standard.string(forKey: key), s.contains("workers.dev") { UserDefaults.standard.removeObject(forKey: key) }
+    }
 
     static var url: URL {
         let s = UserDefaults.standard.string(forKey: key) ?? defaultURL

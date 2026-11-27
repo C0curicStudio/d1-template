@@ -6,6 +6,7 @@ struct RootView: View {
     @StateObject private var sync = LibrarySync.shared
     @Environment(\.scenePhase) private var phase
     @State private var booted = false
+    @State private var splash = true
 
     var body: some View {
         Group {
@@ -21,6 +22,7 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: api.authed)
+        .overlay { if splash { SplashView { splash = false }.transition(.opacity) } }
         .task {
             await api.bootstrap()
             booted = true

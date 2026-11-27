@@ -10,6 +10,10 @@ targets:
     platform: iOS
     sources:
       - path: MaxNote
+        excludes:
+          - web
+      - path: MaxNote/web
+        type: folder
     settings:
       base:
         PRODUCT_NAME: MaxNote
@@ -28,7 +32,8 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSRequiresIPhoneOS: true
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchBG
         UIRequiresFullScreen: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
